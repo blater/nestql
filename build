@@ -2,6 +2,10 @@
 set -euo pipefail
 name=nestql
 
+[[ -d /Library/Java/JavaVirtualMachines/graalvm-25.jdk ]] || util/graal_install.sh
+export GRAALVM_HOME="/Library/Java/JavaVirtualMachines/graalvm-25.jdk/Contents/Home"
+
+
 usage() {
   cat <<'USAGE'
 Usage: ./build [--skip-tests] [--] [extra Maven args...]
