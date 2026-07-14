@@ -1,0 +1,78 @@
+package blater.nestql.parser;
+
+import blater.nestql.core.parser.HiQLLexer;
+import blater.nestql.core.parser.HiQLParser;
+import blater.nestql.outputwriter.OutputType;
+import blater.nestql.parser.script.ErrorStrategy;
+import blater.nestql.parser.script.NestScript;
+import blater.nestql.parser.script.NestStatement;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
+
+import java.util.Objects;
+
+import static blater.nestql.util.ValueUtil.has;
+
+/*
+ * Responsibility: Parses nestql text into NestScript and dispatches
+ * statement bodies to the focused statement builders.
+ */
+public class ScriptParser {
+
+  public static NestScript parse(String inputScript) {
+
+    var parser = init(inputScript);
+    var script = parser.script();
+    var outputType = script.scriptItem().stream()
+        .map(HiQLParser.ScriptItemContext::outputDirective)
+        .filter(Objects::nonNull)
+        .findFirst()
+        .map(ScriptParser::outputType)
+        .orElse(null);
+    var statements = script.scriptItem().stream()
+            .map(HiQLParser.ScriptItemContext::statementBlock)
+            .filter(Objects::nonNull)
+            .map(ScriptParser::buildStatement)
+            .toList();
+    return new NestScript(outputType, statements);
+  }
+
+  private static HiQLParser init(String input) {
+    HiQLLexer lexer = new HiQLLexer(CharStreams.fromString(input));
+    HiQLParser parser = new HiQLParser(new CommonTokenStream(lexer));
+    parser.addErrorListener(new SyntaxErrorListener());
+    return parser;
+  }
+
+  private static NestStatement buildStatement(HiQLParser.StatementBlockContext statementBlock) {
+    var body = statementBlock.body();
+    var stmt =
+        has(body.autoCommit()) ? NestStatement.autocommit(Boolean.toString(has(body.autoCommit().K_ON())))
+      : has(body.catalog()) ? NestStatement.catalog()
+      : has(body.selectStatement()) ? SelectBuilder.buildSelect(body.selectStatement())
+      : has(body.dmlUpdate()) ? DmlBuilder.buildDmlUpdate(body.dmlUpdate())
+      : has(body.dmlInsert()) ? DmlBuilder.buildDmlInsert(body.dmlInsert())
+      : has(body.dmlDelete()) ? DmlBuilder.buildDmlDelete(body.dmlDelete())
+      : has(body.execProc()) ? DmlBuilder.buildExecProc(body.execProc())
+      : has(body.literalSql()) ? buildLiteralSql(body.literalSql())
+      : has(body.capture()) ? buildCapture(body.capture())
+      : NestStatement.noop();
+
+    stmt.setErrorHandling(ErrorStrategy.from(statementBlock.handlerBlock()));
+    return stmt;
+  }
+
+  private static NestStatement buildCapture(HiQLParser.CaptureContext ctx) {
+    return NestStatement.capture(
+        ParseUtils.unquoteString(ctx.STRING().getText()),
+        ParseUtils.textOf(ctx.rawSql()).trim());
+  }
+
+  private static NestStatement buildLiteralSql(HiQLParser.LiteralSqlContext ctx) {
+    return NestStatement.literal(ParseUtils.textOf(ctx.rawSql()).trim());
+  }
+
+  private static OutputType outputType(HiQLParser.OutputDirectiveContext ctx) {
+    return OutputType.fromName(ctx.outputFormat().getText());
+  }
+}
