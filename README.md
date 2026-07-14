@@ -1,23 +1,32 @@
 ##  NestQL
 
-**NestQL** is a **SQL**-like language for getting **JSON** / **YAML** / **XML** / **CSV** / **Parquet** into and out of relational
-databases.  It is designed to simplify complex or difficult use-cases.  
+**NestQL** is a **SQL**-like language for dealing with **JSON** / **YAML** / **XML** / **CSV** / **Parquet** files.
+It allows you to query them, update databases from these files, and pull data out of databases in these formats.
 
-### How does it work?
+## Full Documentation
 
-You use SQL with extensions such as "into {path.to.the.field}" to tell it where in your JSON/XML to place
-the data you've queried. `structure {path.to.object} key (...)` tells nestQL which rows contribute to the same output object.
-Here's a simple example to dump a single table as a JSON document:
+See the [nestQL user manual](docs/user-manual.md) for the complete language and command-line reference.
 
+### Getting started
+
+You use SQL and specify paths such as "{customers.person.address}" to reference fields in your json / yaml / xml file.
+
+For example if you have a json file of customers you want to update a DB from:
+``` sql 
+update address
+set street = {customers.person.addressline1},
+    city = {customers.person.addressline4}
+where personid = {customers.person.id};
+```
+
+The SQL extension `structure {path.to.object} key (...)` tells nestQL which rows contribute to the same output object:
 ```sql
 output json;                                    -- create json output
-
 select personid into {people.person.id},     -- the persons id goes into people.person.id in the JSON
        name into {people.person.firstname}   -- the name goes into people.person.name
 from person
 structure {people.person} key (personid);
 ```
-
 Output:
 ```json
 {
@@ -25,59 +34,10 @@ Output:
     "person": [
       { "id": 1, "name": "Alice" },
       { "id": 2, "name": "Bob" },
-      ...etc
-      { "id": 5, "name": "Eva" }
-    ]
-  }
+      { "id": 3, "name": "Eva" }
+    ] }
 }
 ```
-
-### Building with Maven
-
-NestQL is built with Maven. The default build uses the active `jdbc-common`
-profile, which includes the common open-source JDBC drivers.
-
-```bash
-mvn test
-mvn package
-```
-
-Use `-DskipTests` when you only need a package after tests have already passed:
-
-```bash
-mvn -DskipTests package
-```
-
-JDBC driver profile variations:
-
-```bash
-mvn -Pjdbc-common package
-mvn -Pjdbc-enterprise package
-mvn -Pjdbc-all package
-```
-
-- `jdbc-common`: H2, MySQL, MariaDB, and PostgreSQL.
-- `jdbc-enterprise`: Oracle, SQL Server, DB2, SAP HANA, and Informix.
-- `jdbc-all`: common and enterprise driver sets together.
-
-Native images use the `native` profile. A GraalVM JDK with `native-image`
-support must be on `PATH`.
-
-```bash
-mvn -Pnative -DskipTests package
-mvn -Pjdbc-enterprise,native -DskipTests package
-mvn -Pjdbc-all,native -DskipTests package
-```
-
-The native executable name follows the selected JDBC driver profile:
-
-- default / `jdbc-common`: `nestql`
-- `jdbc-enterprise`: `nestql-enterprise`
-- `jdbc-all`: `nestql-all`
-
-Input formats are application features, not JDBC-profile features. XML, JSON,
-YAML, CSV, and Parquet support should be present in every JVM and native build.
-
 
 ### More complex examples
 Complexity in most tools ramps up quickly when you need heirachical output or need to join tables.
@@ -160,12 +120,6 @@ nestql insert-person.nql person.json -p database.properties
 nestql update-person.nql person.yaml -p database.properties
 ```
 
-## Full Documentation
-
-See the [nestQL user manual](docs/user-manual.md) for the complete language and command-line reference.
-
-The grammar lives in: `src/main/antlr4/blater/nestql/core/parser/NestQL.g4`
-It is processed by ANTLR4 during the Maven build (see `pom.xml`). The generated parser/lexer sources are in `target/generated-sources/antlr4/` and should not be edited directly.
 
 ## Usage
 
@@ -370,3 +324,54 @@ Only `.properties` parameter files currently load values; XML, JSON, and YAML pa
 implemented. A properties file is not required in `--cache` mode because nestQL supplies the local H2 connection.
 Keep property files containing credentials out of source control and restrict their filesystem permissions. Prefer a
 properties file for reusable passwords because command-line values can be visible in shell history and process listings.
+
+
+### Building with Maven
+
+NestQL is built with Maven. The default build uses the active `jdbc-common`
+profile, which includes the common open-source JDBC drivers.
+
+```bash
+mvn test
+mvn package
+```
+
+Use `-DskipTests` when you only need a package after tests have already passed:
+
+```bash
+mvn -DskipTests package
+```
+
+JDBC driver profile variations:
+
+```bash
+mvn -Pjdbc-common package
+mvn -Pjdbc-enterprise package
+mvn -Pjdbc-all package
+```
+
+- `jdbc-common`: H2, MySQL, MariaDB, and PostgreSQL.
+- `jdbc-enterprise`: Oracle, SQL Server, DB2, SAP HANA, and Informix.
+- `jdbc-all`: common and enterprise driver sets together.
+
+Native images use the `native` profile. A GraalVM JDK with `native-image`
+support must be on `PATH`.
+
+```bash
+mvn -Pnative -DskipTests package
+mvn -Pjdbc-enterprise,native -DskipTests package
+mvn -Pjdbc-all,native -DskipTests package
+```
+
+The native executable name follows the selected JDBC driver profile:
+
+- default / `jdbc-common`: `nestql`
+- `jdbc-enterprise`: `nestql-enterprise`
+- `jdbc-all`: `nestql-all`
+
+Input formats are application features, not JDBC-profile features. XML, JSON,
+YAML, CSV, and Parquet support should be present in every JVM and native build.
+
+The grammar lives in: `src/main/antlr4/blater/nestql/core/parser/NestQL.g4`
+It is processed by ANTLR4 during the Maven build (see `pom.xml`). The generated parser/lexer sources are in `target/generated-sources/antlr4/` and should not be edited directly.
+
