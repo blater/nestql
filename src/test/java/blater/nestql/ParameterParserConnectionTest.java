@@ -160,6 +160,16 @@ class ParameterParserConnectionTest {
   }
 
   @Test
+  void propertiesFilenameMayContainDashes() throws Exception {
+    Path properties = properties("staging-properties.properties", "region=staging\n");
+
+    Map<String, String> params = ParameterParser.parse(
+        script().toString(), "-p", properties.toString());
+
+    assertEquals("staging", params.get("region"));
+  }
+
+  @Test
   void laterCommandValueWinsWithinCommandLayer() throws Exception {
     Map<String, String> namedThenAssignment = ParameterParser.parse(
         script().toString(),

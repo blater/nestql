@@ -1,7 +1,5 @@
 package blater.nestql;
 
-import java.util.Locale;
-
 /** Prints top-level and topic-specific command-line help. */
 public final class Help {
   static final String USAGE = """
@@ -15,6 +13,8 @@ public final class Help {
   static final String HELP_ON_HELP = """
       HELP
           nestql -h
+              Print brief usage help.
+
           nestql --help
               Print the complete nestql(1) manual page.
 
@@ -228,7 +228,10 @@ public final class Help {
           or inline text. The input file type is selected by its extension.
 
       HELP
-          -h, --help
+          -h
+              Print brief usage help.
+
+          --help
               Print this manual page.
 
           --help help
@@ -291,13 +294,13 @@ public final class Help {
           https://github.com/blater/nestql
       """;
 
-  public void printBriefHelp() {
+  public static void printBriefHelp() {
     System.out.print(USAGE);
     System.out.println("Run 'nestql --help' for the complete manual or 'nestql --help help' for topics.");
   }
 
-  public void printCommandInfo(String command) {
-    String normalized = command == null ? "" : command.strip().toLowerCase(Locale.ROOT);
+  public static void printCommandInfo(String command) {
+    String normalized = command == null ? "" : command.strip().toLowerCase();
     String info = switch (normalized) {
       case "help" -> HELP_ON_HELP;
       case "query", "run" -> QUERY_CMD;
@@ -317,7 +320,7 @@ public final class Help {
     System.out.print(info);
   }
 
-  public void printManPage() {
+  public static void printManPage() {
     System.out.print(MAN_PAGE);
   }
 }

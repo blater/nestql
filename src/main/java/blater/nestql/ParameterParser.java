@@ -21,6 +21,7 @@ public final class ParameterParser {
   public static final String SCRIPT_FILE_PARAM = "NSQL_SCRIPTFILE";
   public static final String SCRIPT_TEXT_PARAM = "NSQL_SCRIPT";
   public static final String HELP_PARAM = "NSQL_HELP";
+  public static final String BRIEF_HELP = "-h";
 
   public static final String CACHE_CLEAR_ALL_PARAM = "NSQL_CACHE_CLEAR_ALL";
   public static final String CACHE_CLEAR_TARGET_PARAM = "NSQL_CACHE_CLEAR_TARGET";
@@ -39,7 +40,7 @@ public final class ParameterParser {
   public static final String JDBC_USERNAME_PARAM = "jdbc.username";
   public static final String JDBC_PASSWORD_PARAM = "jdbc.password";
 
-  // returns parameters
+  // Returns the runtime parameter map assembled from CLI arguments and property files.
   public static Map<String, String> parse(String... args) {
     String helpTopic = helpTopic(args);
     if (helpTopic != null) {
@@ -55,125 +56,104 @@ public final class ParameterParser {
     String port = null;
 
     for (int i = 0; i < args.length; i++) {
-      var arg = args[i];
-      String connectionOption = connectionOptionName(arg);
-      if (connectionOption != null) {
-        String value = connectionOptionValue(args, i, connectionOption);
-        if (arg.indexOf('=') < 0) {
-          i++;
+      String argument = args[i];
+      int equals = argument.startsWith("--") ? argument.indexOf('=') : -1;
+      String option = equals < 0 ? argument : argument.substring(0, equals);
+      String attachedValue = equals < 0 ? null : argument.substring(equals + 1);
+
+      switch (option) {
+        case "-p" -> {
+          String filename = requiredValue(
+              args, i, attachedValue, "no properties filename supplied");
+          i = nextIndex(i, attachedValue);
+          addParametersFromFile(propertyParameters, filename);
         }
-        switch (connectionOption) {
-          case "--db" -> databaseType = value;
-          case "--database" -> databaseName = value;
-          case "--host" -> host = value;
-          case "--port" -> port = value;
-          case "--user", "--jdbc-username" -> commandParameters.put(JDBC_USERNAME_PARAM, value);
-          case "--password", "--jdbc-password" -> commandParameters.put(JDBC_PASSWORD_PARAM, value);
-          case "--jdbc-driver" -> commandParameters.put(JDBC_DRIVER_PARAM, value);
-          case "--jdbc-class-name" -> commandParameters.put(JDBC_CLASS_NAME_PARAM, value);
-          case "--jdbc-database" -> commandParameters.put(JDBC_DATABASE_PARAM, value);
+
+        case "--cache" -> {
+          requireNoAttachedValue(argument, attachedValue);
+          commandParameters.put(CACHE_MODE_PARAM, "true");
         }
-        continue;
-      }
-
-      // parameters file
-      if ("-p".equals(arg)) {
-        if (i + 1 >= args.length) {
-          Log.fatal(IllegalArgumentException.class, "no properties filename supplied");
+        case "--cache-dir" -> i = putValue(
+            commandParameters, CACHE_DIR_PARAM,
+            args, i, attachedValue, "no cache directory supplied");
+        case "--list-caches" -> {
+          requireNoAttachedValue(argument, attachedValue);
+          commandParameters.put(CACHE_LIST_PARAM, "true");
         }
-        String filename = args[++i];
-        if (filename == null)
-          Log.fatal(IllegalArgumentException.class, "no properties filename supplied");
-
-        if (filename.endsWith(".properties")) {
-          addParametersFromPropFile(propertyParameters, filename);
-        } else if (filename.endsWith(".xml"))
-          addParametersFromXmlFile(propertyParameters, filename);
-        else if (filename.endsWith(".json"))
-          addParametersFromJsonFile(propertyParameters, filename);
-        else if (filename.endsWith(".yaml"))
-          addParametersFromYamlFile(propertyParameters, filename);
-
-        // cache the query
-      } else if ("--cache".equals(arg)) {
-        addSystemParameter(commandParameters, CACHE_MODE_PARAM, "true");
-
-        // override default cache dir
-      } else if ("--cache-dir".equals(arg)) {
-        requireValueAfter(args, i, "no cache directory supplied");
-        addSystemParameter(commandParameters, CACHE_DIR_PARAM, args[++i]);
-
-        // override default cache dir
-      } else if (arg.startsWith("--cache-dir=")) {
-        addSystemParameter(commandParameters, CACHE_DIR_PARAM, arg.substring("--cache-dir=".length()));
-
-        // show available cache databases
-      } else if ("--list-caches".equals(arg)) {
-        addSystemParameter(commandParameters, CACHE_LIST_PARAM, "true");
-
-        // clear out cache
-      } else if ("--clear-cache".equals(arg)) {
-        if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
-          addSystemParameter(commandParameters, CACHE_CLEAR_TARGET_PARAM, args[++i]);
-        } else {
-          addSystemParameter(commandParameters, CACHE_CLEAR_ALL_PARAM, "true");
+        case "--clear-cache" -> {
+          if (attachedValue != null) {
+            commandParameters.put(CACHE_CLEAR_TARGET_PARAM, attachedValue);
+          } else if (hasOptionalValue(args, i)) {
+            commandParameters.put(CACHE_CLEAR_TARGET_PARAM, args[++i]);
+          } else {
+            commandParameters.put(CACHE_CLEAR_ALL_PARAM, "true");
+          }
         }
-        // clear out cache
-      } else if (arg.startsWith("--clear-cache=")) {
-        addSystemParameter(commandParameters, CACHE_CLEAR_TARGET_PARAM, arg.substring("--clear-cache=".length()));
+        case "--clear-cache-older-than" -> i = putValue(
+            commandParameters, CACHE_CLEAR_OLDER_THAN_PARAM,
+            args, i, attachedValue, "no cache age supplied");
 
-        // clear out cache
-      } else if ("--clear-cache-older-than".equals(arg)) {
-        requireValueAfter(args, i, "no cache age supplied");
-        addSystemParameter(commandParameters, CACHE_CLEAR_OLDER_THAN_PARAM, args[++i]);
-        // clear out cache
-      } else if (arg.startsWith("--clear-cache-older-than=")) {
-        addSystemParameter(commandParameters, CACHE_CLEAR_OLDER_THAN_PARAM, arg.substring("--clear-cache-older-than=".length()));
+        case "--parquet-root" -> i = putValue(
+            commandParameters, PARQUET_ROOT_PARAM,
+            args, i, attachedValue, "no parquet root supplied");
+        case "--parquet-record" -> i = putValue(
+            commandParameters, PARQUET_RECORD_PARAM,
+            args, i, attachedValue, "no parquet record supplied");
 
-        // parquet specific
-      } else if ("--parquet-root".equals(arg)) {
-        requireValueAfter(args, i, "no parquet root supplied");
-        addSystemParameter(commandParameters, PARQUET_ROOT_PARAM, args[++i]);
-        // parquet specific
-      } else if (arg.startsWith("--parquet-root=")) {
-        addSystemParameter(commandParameters, PARQUET_ROOT_PARAM, arg.substring("--parquet-root=".length()));
-        // parquet specific
-      } else if ("--parquet-record".equals(arg)) {
-        requireValueAfter(args, i, "no parquet record supplied");
-        addSystemParameter(commandParameters, PARQUET_RECORD_PARAM, args[++i]);
-        // parquet specific
-      } else if (arg.startsWith("--parquet-record=")) {
-        addSystemParameter(commandParameters, PARQUET_RECORD_PARAM, arg.substring("--parquet-record=".length()));
+        case "--output", "-o" -> i = putValue(
+            commandParameters, OUTPUT_TYPE_PARAM,
+            args, i, attachedValue, "no output type supplied");
 
-        // output type e.g. json/xml/yaml
-      } else if ("--output".equals(arg) || "-o".equals(arg)) {
-        if (i + 1 >= args.length) {
-          Log.fatal(IllegalArgumentException.class, "no output type supplied");
+        case "--db" -> {
+          databaseType = requiredValue(args, i, attachedValue, "no value supplied for --db");
+          i = nextIndex(i, attachedValue);
         }
-        addSystemParameter(commandParameters, OUTPUT_TYPE_PARAM, args[++i]);
+        case "--database" -> {
+          databaseName = requiredValue(args, i, attachedValue, "no value supplied for --database");
+          i = nextIndex(i, attachedValue);
+        }
+        case "--host" -> {
+          host = requiredValue(args, i, attachedValue, "no value supplied for --host");
+          i = nextIndex(i, attachedValue);
+        }
+        case "--port" -> {
+          port = requiredValue(args, i, attachedValue, "no value supplied for --port");
+          i = nextIndex(i, attachedValue);
+        }
+        case "--user", "--jdbc-username" -> i = putValue(
+            commandParameters, JDBC_USERNAME_PARAM,
+            args, i, attachedValue, "no value supplied for " + option);
+        case "--password", "--jdbc-password" -> i = putValue(
+            commandParameters, JDBC_PASSWORD_PARAM,
+            args, i, attachedValue, "no value supplied for " + option);
+        case "--jdbc-driver" -> i = putValue(
+            commandParameters, JDBC_DRIVER_PARAM,
+            args, i, attachedValue, "no value supplied for --jdbc-driver");
+        case "--jdbc-class-name" -> i = putValue(
+            commandParameters, JDBC_CLASS_NAME_PARAM,
+            args, i, attachedValue, "no value supplied for --jdbc-class-name");
+        case "--jdbc-database" -> i = putValue(
+            commandParameters, JDBC_DATABASE_PARAM,
+            args, i, attachedValue, "no value supplied for --jdbc-database");
 
-      } else if (arg.startsWith("--output=")) {
-        addSystemParameter(commandParameters, OUTPUT_TYPE_PARAM, arg.substring("--output=".length()));
-
-      } else if (arg.startsWith("-")) {
-        Log.fatal(IllegalArgumentException.class, "Unknown option: " + arg);
-
-      } else if (isParameterAssignment(arg) && !fileExists(arg)) {
-        addParameterFromMainPropsFile(commandParameters, arg);
-
-      } else {
-        positionals.add(arg);
+        default -> {
+          if (argument.startsWith("-")) {
+            Log.fatal(IllegalArgumentException.class, "Unknown option: " + argument);
+          } else if (isParameterAssignment(argument) && !fileExists(argument)) {
+            addCommandParameter(commandParameters, argument);
+          } else {
+            positionals.add(argument);
+          }
+        }
       }
     }
+
     Map<String, String> parameters = new LinkedHashMap<>(propertyParameters);
-    resolveSimpleConnection(parameters, databaseType, databaseName, host, port);
+    applySimpleConnection(parameters, databaseType, databaseName, host, port);
     parameters.putAll(commandParameters);
-    if (commandParameters.containsKey(JDBC_CLASS_NAME_PARAM)
-        && !commandParameters.containsKey(JDBC_DRIVER_PARAM)) {
-      parameters.remove(JDBC_DRIVER_PARAM);
-    }
-    validateCacheConnectionConflict(parameters);
+    applyDriverClassPrecedence(parameters, commandParameters);
     normalizeJdbcDriver(parameters);
+    validateCacheConnectionConflict(parameters);
     resolvePositionals(parameters, positionals);
     return parameters;
   }
@@ -182,7 +162,7 @@ public final class ParameterParser {
     for (int index = 0; index < args.length; index++) {
       String argument = args[index];
       if ("-h".equals(argument)) {
-        return "";
+        return BRIEF_HELP;
       }
       if (argument.startsWith("--help=")) {
         return argument.substring("--help=".length());
@@ -197,24 +177,66 @@ public final class ParameterParser {
     return null;
   }
 
-  private static String connectionOptionName(String argument) {
-    int equals = argument.indexOf('=');
-    String option = equals < 0 ? argument : argument.substring(0, equals);
-    return switch (option) {
-      case "--db", "--database", "--host", "--port", "--user", "--password",
-           "--jdbc-driver", "--jdbc-class-name", "--jdbc-database",
-           "--jdbc-username", "--jdbc-password" -> option;
-      default -> null;
-    };
+  private static String requiredValue(
+      String[] args, int index, String attachedValue, String missingMessage) {
+    if (attachedValue != null) {
+      return attachedValue;
+    }
+    requireValueAfter(args, index, missingMessage);
+    return args[index + 1];
   }
 
-  private static String connectionOptionValue(String[] args, int index, String option) {
-    int equals = args[index].indexOf('=');
-    if (equals >= 0) {
-      return args[index].substring(equals + 1);
+  private static int putValue(
+      Map<String, String> parameters,
+      String key,
+      String[] args,
+      int index,
+      String attachedValue,
+      String missingMessage) {
+    parameters.put(key, requiredValue(args, index, attachedValue, missingMessage));
+    return nextIndex(index, attachedValue);
+  }
+
+  private static int nextIndex(int index, String attachedValue) {
+    return attachedValue == null ? index + 1 : index;
+  }
+
+  private static void requireNoAttachedValue(String argument, String attachedValue) {
+    if (attachedValue != null) {
+      Log.fatal(IllegalArgumentException.class, "Unknown option: " + argument);
     }
-    requireValueAfter(args, index, "no value supplied for " + option);
-    return args[index + 1];
+  }
+
+  private static boolean hasOptionalValue(String[] args, int index) {
+    return index + 1 < args.length && !args[index + 1].startsWith("-");
+  }
+
+  private static void addParametersFromFile(Map<String, String> parameters, String filename) {
+    if (filename.endsWith(".properties")) {
+      addParametersFromPropFile(parameters, filename);
+    } else if (filename.endsWith(".xml")) {
+      addParametersFromXmlFile(parameters, filename);
+    } else if (filename.endsWith(".json")) {
+      addParametersFromJsonFile(parameters, filename);
+    } else if (filename.endsWith(".yaml")) {
+      addParametersFromYamlFile(parameters, filename);
+    }
+  }
+
+  private static void addCommandParameter(Map<String, String> parameters, String assignment) {
+    int equals = assignment.indexOf('=');
+    String key = assignment.substring(0, equals);
+    if (isNotSystemParam(key)) {
+      parameters.put(key, assignment.substring(equals + 1).trim());
+    }
+  }
+
+  private static void applyDriverClassPrecedence(
+      Map<String, String> parameters, Map<String, String> commandParameters) {
+    if (commandParameters.containsKey(JDBC_CLASS_NAME_PARAM)
+        && !commandParameters.containsKey(JDBC_DRIVER_PARAM)) {
+      parameters.remove(JDBC_DRIVER_PARAM);
+    }
   }
 
   private static void validateCacheConnectionConflict(Map<String, String> parameters) {
@@ -239,7 +261,7 @@ public final class ParameterParser {
     }
   }
 
-  private static void resolveSimpleConnection(
+  private static void applySimpleConnection(
       Map<String, String> parameters,
       String databaseType,
       String databaseName,
@@ -379,10 +401,6 @@ public final class ParameterParser {
         || key.equals(PARQUET_RECORD_PARAM));
   }
 
-  static void addSystemParameter(Map<String, String> parameters, String key, String value) {
-    parameters.put(key, value);
-  }
-
   static void addParametersFromPropFile(Map<String, String> parameters, String filename) {
     Path propFile = Path.of(filename);
     try (Stream<String> lines = Files.lines(propFile)) {
@@ -427,64 +445,58 @@ public final class ParameterParser {
       }
       return;
     }
-    if (positionArguments.isEmpty()) {
-      Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
-    }
-    if (positionArguments.size() > 2) {
-      Log.fatal(IllegalArgumentException.class, "Unexpected argument: " + positionArguments.get(2));
-    }
 
-    if (positionArguments.size() == 1) {
-      resolveSinglePositional(params, positionArguments.getFirst());
-    } else {
-      resolveTwoPositionals(params, positionArguments.get(0), positionArguments.get(1));
-    }
-  }
+    switch (positionArguments.size()) {
+      case 0 -> Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
+      case 1 -> {
+        String argument = positionArguments.getFirst();
+        if (!fileExists(argument)) {
+          params.put(SCRIPT_TEXT_PARAM, argument);
+        } else if (isInputFile(argument)) {
+          Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
+        } else {
+          params.put(SCRIPT_FILE_PARAM, argument);
+        }
+      }
+      case 2 -> {
+        String first = positionArguments.get(0);
+        String second = positionArguments.get(1);
+        boolean firstExists = fileExists(first);
+        boolean secondExists = fileExists(second);
 
-
-  private static void resolveSinglePositional(Map<String, String> parameters, String arg) {
-    if (!fileExists(arg)) {
-      addSystemParameter(parameters, SCRIPT_TEXT_PARAM, arg);
-    } else if (isInputFile(arg)) {
-      Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
-    } else {
-      addSystemParameter(parameters, SCRIPT_FILE_PARAM, arg);
-    }
-  }
-
-  private static void resolveTwoPositionals(Map<String, String> parameters, String first, String second) {
-    boolean firstExists = fileExists(first);
-    boolean secondExists = fileExists(second);
-
-    if (!firstExists && !secondExists) {
-      Log.fatal(IllegalArgumentException.class, "Neither script nor input file exists: " + first + ", " + second);
-    } else if (firstExists && secondExists) {
-      resolveTwoFiles(parameters, first, second);
-    } else {
-      resolveExistingFileAndMissingArgument(parameters, firstExists ? first : second, firstExists ? second : first);
-    }
-  }
-
-  private static void resolveTwoFiles(Map<String, String> parameters, String first, String second) {
-    boolean firstInput = isInputFile(first);
-    boolean secondInput = isInputFile(second);
-
-    if (firstInput == secondInput) {
-      Log.fatal(IllegalArgumentException.class, "Could not identify script and input file from: " + first + ", " + second);
-    }
-    addSystemParameter(parameters, SCRIPT_FILE_PARAM, firstInput ? second : first);
-    addSystemParameter(parameters, INPUT_FILENAME, firstInput ? first : second);
-  }
-
-  private static void resolveExistingFileAndMissingArgument(Map<String, String> parameters, String existingFile, String missingArgument) {
-    if (isInputFile(existingFile)) {
-      addSystemParameter(parameters, INPUT_FILENAME, existingFile);
-      addSystemParameter(parameters, SCRIPT_TEXT_PARAM, missingArgument);
-    } else if (isInputFile(missingArgument)) {
-      addSystemParameter(parameters, SCRIPT_FILE_PARAM, existingFile);
-      addSystemParameter(parameters, INPUT_FILENAME, missingArgument);
-    } else {
-      Log.fatal(IllegalArgumentException.class, "Input file does not exist: " + missingArgument);
+        if (!firstExists && !secondExists) {
+          Log.fatal(
+              IllegalArgumentException.class,
+              "Neither script nor input file exists: " + first + ", " + second);
+        } else if (firstExists && secondExists) {
+          boolean firstInput = isInputFile(first);
+          boolean secondInput = isInputFile(second);
+          if (firstInput == secondInput) {
+            Log.fatal(
+                IllegalArgumentException.class,
+                "Could not identify script and input file from: " + first + ", " + second);
+          }
+          params.put(SCRIPT_FILE_PARAM, firstInput ? second : first);
+          params.put(INPUT_FILENAME, firstInput ? first : second);
+        } else {
+          String existingFile = firstExists ? first : second;
+          String missingArgument = firstExists ? second : first;
+          if (isInputFile(existingFile)) {
+            params.put(INPUT_FILENAME, existingFile);
+            params.put(SCRIPT_TEXT_PARAM, missingArgument);
+          } else if (isInputFile(missingArgument)) {
+            params.put(SCRIPT_FILE_PARAM, existingFile);
+            params.put(INPUT_FILENAME, missingArgument);
+          } else {
+            Log.fatal(
+                IllegalArgumentException.class,
+                "Input file does not exist: " + missingArgument);
+          }
+        }
+      }
+      default -> Log.fatal(
+          IllegalArgumentException.class,
+          "Unexpected argument: " + positionArguments.get(2));
     }
   }
 

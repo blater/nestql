@@ -253,6 +253,27 @@ class MainTest {
   }
 
   @Test
+  void nonJdbcLongOptionsShareEqualsValueSyntax() throws Exception {
+    Path script = write("query.nql", "catalog;");
+
+    var params = ParameterParser.parse(
+        script.toString(),
+        "--output=json",
+        "--cache-dir=" + tempDir.resolve("cache"),
+        "--parquet-root=customers",
+        "--parquet-record=customer");
+    var clearTarget = ParameterParser.parse("--clear-cache=input.json");
+    var clearOlder = ParameterParser.parse("--clear-cache-older-than=6h");
+
+    assertEquals("json", params.get(ParameterParser.OUTPUT_TYPE_PARAM));
+    assertEquals(tempDir.resolve("cache").toString(), params.get(ParameterParser.CACHE_DIR_PARAM));
+    assertEquals("customers", params.get(ParameterParser.PARQUET_ROOT_PARAM));
+    assertEquals("customer", params.get(ParameterParser.PARQUET_RECORD_PARAM));
+    assertEquals("input.json", clearTarget.get(ParameterParser.CACHE_CLEAR_TARGET_PARAM));
+    assertEquals("6h", clearOlder.get(ParameterParser.CACHE_CLEAR_OLDER_THAN_PARAM));
+  }
+
+  @Test
   void propertiesFileCannotSetParquetSystemParameters() {
     Map<String, String> params = new LinkedHashMap<>();
 

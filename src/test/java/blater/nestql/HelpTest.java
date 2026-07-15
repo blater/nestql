@@ -6,16 +6,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HelpTest {
   @Test
-  void shortAndLongHelpPrintTheManPage() throws Exception {
+  void shortHelpIsBriefAndLongHelpPrintsTheManPage() throws Exception {
     String shortHelp = captureStdout(() -> Main.main("-h"));
     String longHelp = captureStdout(() -> Main.main("--help"));
 
-    assertEquals(shortHelp, longHelp);
+    assertTrue(shortHelp.startsWith("Usage: nestql"));
+    assertTrue(shortHelp.contains("Run 'nestql --help' for the complete manual"));
+    assertFalse(shortHelp.contains("NESTQL(1)"));
     assertTrue(longHelp.startsWith("NESTQL(1)"));
     assertTrue(longHelp.contains("\nSYNOPSIS\n"));
     assertTrue(longHelp.contains("--help <topic>"));

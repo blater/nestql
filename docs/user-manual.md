@@ -280,9 +280,9 @@ nestql --help help
 nestql --help query
 ```
 
-`-h` and `--help` print the complete `nestql(1)` manual page. `--help help`
-lists the available focused help topics, and `--help <topic>` prints help for
-one command or option group.
+`-h` prints brief usage help, while `--help` prints the complete `nestql(1)`
+manual page. `--help help` lists the available focused help topics, and
+`--help <topic>` prints help for one command or option group.
 
 ### Positional Arguments
 
@@ -299,7 +299,8 @@ In `--cache` mode, the load file is read before the script runs and is required.
 
 | Option                     | Meaning                                          |
 |----------------------------|--------------------------------------------------|
-| `-h`, `--help`             | Print the complete `nestql(1)` manual page.      |
+| `-h`                       | Print brief usage help.                          |
+| `--help`                   | Print the complete `nestql(1)` manual page.      |
 | `--help help`              | List focused help topics.                        |
 | `--help topic`             | Print focused help for a command or option group. |
 | `-p properties-file`       | Load parameters from a `.properties` file.       |

@@ -14,13 +14,15 @@ import static blater.nestql.ParameterParser.*;
 public class Main {
   public static void main(String... args) throws Exception {
     var params = ParameterParser.parse(args);
+
     if (params.containsKey(HELP_PARAM)) {
-      Help help = new Help();
       String topic = params.get(HELP_PARAM);
-      if (topic.isBlank()) {
-        help.printManPage();
+      if (BRIEF_HELP.equals(topic)) {
+        Help.printBriefHelp();
+      } else if (topic.isBlank()) {
+        Help.printManPage();
       } else {
-        help.printCommandInfo(topic);
+        Help.printCommandInfo(topic);
       }
     } else if (params.containsKey(CACHE_LIST_PARAM)) {
       PersistentCache.list(params);
