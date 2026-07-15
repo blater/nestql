@@ -10,6 +10,10 @@ import java.sql.SQLException;
  * Responsibility: Provides the project logging facade over SLF4J.
  */
 public class Log {
+  private static boolean isDebug = false;
+  public static void debug(boolean val) {
+    Log.isDebug = val;
+  }
   public static final Class<? extends Throwable> FATAL_SYNTAX_ERROR = HiqlSyntaxException.class;
 
   public static void debug(String msg, Object... args) { log.debug(msg, args); }
@@ -32,19 +36,23 @@ public class Log {
 
   public static <R, T extends Throwable> R fatal(Class<T> type, String message) {
     log.error(message);
-    T ex = create(type, message, null);
-    sneakyThrow(ex);
+    if (isDebug) {
+      T ex = createException(type, message, null);
+      sneakyThrow(ex);
+    }
     return exit(1);
   }
 
   public static <R, T extends Throwable> R fatal(Class<T> type, String message, Throwable cause) {
     log.error(message, cause);
-    T ex = create(type, message, cause);
-    sneakyThrow(ex);
+    if (isDebug) {
+      T ex = createException(type, message, cause);
+      sneakyThrow(ex);
+    }
     return exit(1);
   }
 
-  private static <T extends Throwable> T create(Class<T> type, String message, Throwable cause) {
+  private static <T extends Throwable> T createException(Class<T> type, String message, Throwable cause) {
     if (type == IllegalStateException.class) {
       return type.cast(new IllegalStateException(message, cause));
     }

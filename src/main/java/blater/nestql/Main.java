@@ -14,7 +14,15 @@ import static blater.nestql.ParameterParser.*;
 public class Main {
   public static void main(String... args) throws Exception {
     var params = ParameterParser.parse(args);
-    if (params.containsKey(CACHE_LIST_PARAM)) {
+    if (params.containsKey(HELP_PARAM)) {
+      Help help = new Help();
+      String topic = params.get(HELP_PARAM);
+      if (topic.isBlank()) {
+        help.printManPage();
+      } else {
+        help.printCommandInfo(topic);
+      }
+    } else if (params.containsKey(CACHE_LIST_PARAM)) {
       PersistentCache.list(params);
     } else  if (params.containsKey(CACHE_CLEAR_TARGET_PARAM)
                || params.containsKey(CACHE_CLEAR_ALL_PARAM)

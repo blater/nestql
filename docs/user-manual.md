@@ -271,6 +271,19 @@ nestql --clear-cache-older-than 6h
 nestql --list-caches
 ```
 
+Command-line help does not require a script:
+
+```bash
+nestql -h
+nestql --help
+nestql --help help
+nestql --help query
+```
+
+`-h` and `--help` print the complete `nestql(1)` manual page. `--help help`
+lists the available focused help topics, and `--help <topic>` prints help for
+one command or option group.
+
 ### Positional Arguments
 
 | Argument      | Meaning                                                  |
@@ -286,6 +299,9 @@ In `--cache` mode, the load file is read before the script runs and is required.
 
 | Option                     | Meaning                                          |
 |----------------------------|--------------------------------------------------|
+| `-h`, `--help`             | Print the complete `nestql(1)` manual page.      |
+| `--help help`              | List focused help topics.                        |
+| `--help topic`             | Print focused help for a command or option group. |
 | `-p properties-file`       | Load parameters from a `.properties` file.       |
 | `--db type`                | Select a supported logical database type and infer its driver class and JDBC URL. |
 | `--database name`          | Set the simple-form database name, Oracle service name, or H2 URL suffix. |

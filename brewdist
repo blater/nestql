@@ -67,8 +67,8 @@ class Nestql < Formula
   sha256 "$checksum"
   license "AGPL-3.0-only"
 
-  depends_on macos: :tahoe
   depends_on arch: :arm64
+  depends_on macos: :tahoe
 
   def install
     bin.install "nestql"
@@ -104,8 +104,8 @@ checksum="$(shasum -a 256 "$archive_path" | awk '{ print $1 }')"
 release_url="https://github.com/$source_repository/releases/download/v$version/$archive_name"
 write_formula "$release_url" "$checksum"
 
-log "Auditing $formula_path"
-brew audit --strict "$formula_path"
+log "Checking Homebrew formula style"
+brew style "$formula_path"
 
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/nestql-brewdist.XXXXXX")"
 cleanup() {

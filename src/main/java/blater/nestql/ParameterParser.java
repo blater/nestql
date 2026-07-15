@@ -20,6 +20,7 @@ public final class ParameterParser {
 
   public static final String SCRIPT_FILE_PARAM = "NSQL_SCRIPTFILE";
   public static final String SCRIPT_TEXT_PARAM = "NSQL_SCRIPT";
+  public static final String HELP_PARAM = "NSQL_HELP";
 
   public static final String CACHE_CLEAR_ALL_PARAM = "NSQL_CACHE_CLEAR_ALL";
   public static final String CACHE_CLEAR_TARGET_PARAM = "NSQL_CACHE_CLEAR_TARGET";
@@ -40,6 +41,11 @@ public final class ParameterParser {
 
   // returns parameters
   public static Map<String, String> parse(String... args) {
+    String helpTopic = helpTopic(args);
+    if (helpTopic != null) {
+      return Map.of(HELP_PARAM, helpTopic);
+    }
+
     List<String> positionals = new ArrayList<>();
     Map<String, String> propertyParameters = new LinkedHashMap<>();
     Map<String, String> commandParameters = new LinkedHashMap<>();
@@ -170,6 +176,25 @@ public final class ParameterParser {
     normalizeJdbcDriver(parameters);
     resolvePositionals(parameters, positionals);
     return parameters;
+  }
+
+  private static String helpTopic(String[] args) {
+    for (int index = 0; index < args.length; index++) {
+      String argument = args[index];
+      if ("-h".equals(argument)) {
+        return "";
+      }
+      if (argument.startsWith("--help=")) {
+        return argument.substring("--help=".length());
+      }
+      if ("--help".equals(argument)) {
+        if (index + 1 < args.length && !args[index + 1].startsWith("-")) {
+          return args[index + 1];
+        }
+        return "";
+      }
+    }
+    return null;
   }
 
   private static String connectionOptionName(String argument) {
@@ -340,6 +365,7 @@ public final class ParameterParser {
   static boolean isNotSystemParam(String key) {
     return !(key.equals(SCRIPT_FILE_PARAM)
         || key.equals(SCRIPT_TEXT_PARAM)
+        || key.equals(HELP_PARAM)
         || key.equals(INPUT_FILENAME)
         || key.equals(JDBC_PROPS_FILE_PARAM)
         || key.equals(OUTPUT_TYPE_PARAM)
