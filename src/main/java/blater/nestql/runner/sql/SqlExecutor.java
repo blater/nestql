@@ -71,8 +71,8 @@ public final class SqlExecutor {
     return context.columnNames(tableName);
   }
 
-  public Hierarchy catalog() {
-    return Catalog.read(context.connection());
+  public Hierarchy catalog(String tablePattern) {
+    return Catalog.read(context.connection(), tablePattern);
   }
 
   public int runLiteral(String sql, ErrorStrategy errorHandling) {

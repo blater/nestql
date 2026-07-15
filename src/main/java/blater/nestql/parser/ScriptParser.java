@@ -48,7 +48,7 @@ public class ScriptParser {
     var body = statementBlock.body();
     var stmt =
         has(body.autoCommit()) ? NestStatement.autocommit(Boolean.toString(has(body.autoCommit().K_ON())))
-      : has(body.catalog()) ? NestStatement.catalog()
+      : has(body.catalog()) ? buildCatalog(body.catalog())
       : has(body.selectStatement()) ? SelectBuilder.buildSelect(body.selectStatement())
       : has(body.dmlUpdate()) ? DmlBuilder.buildDmlUpdate(body.dmlUpdate())
       : has(body.dmlInsert()) ? DmlBuilder.buildDmlInsert(body.dmlInsert())
@@ -60,6 +60,11 @@ public class ScriptParser {
 
     stmt.setErrorHandling(ErrorStrategy.from(statementBlock.handlerBlock()));
     return stmt;
+  }
+
+  private static NestStatement buildCatalog(HiQLParser.CatalogContext ctx) {
+    String tablePattern = has(ctx.catalogPattern()) ? ctx.catalogPattern().getText() : null;
+    return NestStatement.catalog(ParseUtils.unquoteIdentifier(tablePattern));
   }
 
   private static NestStatement buildCapture(HiQLParser.CaptureContext ctx) {

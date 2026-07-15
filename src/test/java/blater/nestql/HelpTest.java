@@ -31,6 +31,7 @@ class HelpTest {
     assertTrue(output.contains("AVAILABLE HELP TOPICS"));
     assertTrue(output.contains("nestql --help query"));
     assertTrue(output.contains("clear-cache"));
+    assertTrue(output.contains("catalog"));
   }
 
   @Test
@@ -48,6 +49,16 @@ class HelpTest {
 
     assertTrue(output.startsWith("OUTPUT\n"));
     assertTrue(output.contains("--output <type>"));
+  }
+
+  @Test
+  void catalogHelpDescribesPatternsAndConnectionSelection() throws Exception {
+    String output = captureStdout(() -> Main.main("--help", "catalog"));
+
+    assertTrue(output.startsWith("CATALOG\n"));
+    assertTrue(output.contains("nestql catalog [table-pattern]"));
+    assertTrue(output.contains("active cache"));
+    assertTrue(output.contains("Quote patterns"));
   }
 
   @Test

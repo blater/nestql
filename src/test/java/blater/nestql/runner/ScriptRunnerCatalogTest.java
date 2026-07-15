@@ -26,7 +26,7 @@ class ScriptRunnerCatalogTest {
   Path tempDir;
 
   @Test
-  void catalogStatementOutputsUserTablesAndColumnsFromConfiguredDatabase() throws Exception {
+  void catalogWithoutPatternListsUserTablesWithoutDetails() throws Exception {
     try (H2Database database = new H2Database()) {
       database.execute(
           "create table person (personid integer not null, firstname varchar(80))",
@@ -39,14 +39,48 @@ class ScriptRunnerCatalogTest {
       assertTrue(containsValue(values(catalog, "catalog.table.name"), "person"));
       assertTrue(containsValue(values(catalog, "catalog.table.name"), "audit_log"));
       assertFalse(containsValue(values(catalog, "catalog.table.name"), "person_view"));
-      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "personid"));
-      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "firstname"));
+      assertTrue(values(catalog, "catalog.table.columns.column.name").isEmpty());
 
       String json = JsonOutputWriter.map(catalog);
       assertTrue(json.contains("\"catalog\""));
       assertTrue(json.contains("\"table\""));
-      assertTrue(json.contains("\"columns\""));
-      assertTrue(json.contains("\"column\""));
+      assertFalse(json.contains("\"columns\""));
+    }
+  }
+
+  @Test
+  void catalogExactTableOutputsOnlyThatTablesDetails() throws Exception {
+    try (H2Database database = databaseWithCatalogTables()) {
+      Hierarchy catalog = ScriptRunner.run(ScriptParser.parse("catalog person;"), database.jdbcProperties());
+
+      assertEquals(1, values(catalog, "catalog.table.name").size());
+      assertTrue(containsValue(values(catalog, "catalog.table.name"), "person"));
+      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "personid"));
+      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "firstname"));
+      assertFalse(containsValue(values(catalog, "catalog.table.columns.column.name"), "message"));
+    }
+  }
+
+  @Test
+  void catalogWildcardOutputsDetailsForMatchingTables() throws Exception {
+    try (H2Database database = databaseWithCatalogTables()) {
+      Hierarchy catalog = ScriptRunner.run(ScriptParser.parse("catalog audit*;"), database.jdbcProperties());
+
+      assertEquals(1, values(catalog, "catalog.table.name").size());
+      assertTrue(containsValue(values(catalog, "catalog.table.name"), "audit_log"));
+      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "message"));
+    }
+  }
+
+  @Test
+  void catalogStarOutputsDetailsForAllUserTables() throws Exception {
+    try (H2Database database = databaseWithCatalogTables()) {
+      Hierarchy catalog = ScriptRunner.run(ScriptParser.parse("catalog *;"), database.jdbcProperties());
+
+      assertTrue(containsValue(values(catalog, "catalog.table.name"), "person"));
+      assertTrue(containsValue(values(catalog, "catalog.table.name"), "audit_log"));
+      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "personid"));
+      assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "message"));
     }
   }
 
@@ -69,11 +103,20 @@ class ScriptRunnerCatalogTest {
     params.put(ParameterParser.INPUT_FILENAME, input.toString());
     params.put(ParameterParser.CACHE_DIR_PARAM, tempDir.resolve("cache").toString());
 
-    Hierarchy catalog = ScriptRunner.run(ScriptParser.parse("catalog;"), params);
+    Hierarchy catalog = ScriptRunner.run(ScriptParser.parse("catalog person;"), params);
 
     assertTrue(containsValue(values(catalog, "catalog.table.name"), "person"));
     assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "id"));
     assertTrue(containsValue(values(catalog, "catalog.table.columns.column.name"), "firstname"));
+  }
+
+  private H2Database databaseWithCatalogTables() throws Exception {
+    H2Database database = new H2Database();
+    database.execute(
+        "create table person (personid integer not null, firstname varchar(80))",
+        "create table audit_log (id integer primary key, message varchar(80))",
+        "create view person_view as select personid, firstname from person");
+    return database;
   }
 
   private List<String> values(Hierarchy hierarchy, String path) {

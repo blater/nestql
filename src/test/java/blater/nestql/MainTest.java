@@ -226,6 +226,50 @@ class MainTest {
   }
 
   @Test
+  void catalogCommandStoresItsOptionalPatternAndConnectionSelection() {
+    var summary = ParameterParser.parse("catalog");
+    var details = ParameterParser.parse("--output=json", "catalog", "customer*");
+    var cache = ParameterParser.parse("catalog", "customer*", "--cache", "customers.json");
+    var jdbc = ParameterParser.parse("catalog", "*", "--db", "h2", "--database", "mem:catalog");
+
+    assertEquals("", summary.get(ParameterParser.CATALOG_PATTERN_PARAM));
+    assertFalse(summary.containsKey(ParameterParser.SCRIPT_FILE_PARAM));
+    assertFalse(summary.containsKey(ParameterParser.SCRIPT_TEXT_PARAM));
+    assertEquals("customer*", details.get(ParameterParser.CATALOG_PATTERN_PARAM));
+    assertEquals("json", details.get(ParameterParser.OUTPUT_TYPE_PARAM));
+    assertEquals("customer*", cache.get(ParameterParser.CATALOG_PATTERN_PARAM));
+    assertEquals("customers.json", cache.get(ParameterParser.INPUT_FILENAME));
+    assertEquals("*", jdbc.get(ParameterParser.CATALOG_PATTERN_PARAM));
+    assertEquals("jdbc:h2:mem:catalog", jdbc.get(ParameterParser.JDBC_DATABASE_PARAM));
+  }
+
+  @Test
+  void catalogCommandUsesTheActiveCacheAndSupportsDetails() throws Exception {
+    Path cacheDir = tempDir.resolve("catalog-command-cache");
+    Path input = write("catalog-command.json", """
+        {
+          "data": {
+            "customer": [{ "id": "C1", "country": "GB" }],
+            "audit_log": [{ "id": "A1", "message": "created" }]
+          }
+        }
+        """);
+
+    String details = captureStdout(() -> Main.main(
+        "catalog", "customer", "--cache", input.toString(),
+        "--cache-dir", cacheDir.toString(), "--output", "json"));
+    String summary = captureStdout(() -> Main.main("catalog", "--output", "json"));
+
+    assertTrue(summary.contains("\"CUSTOMER\""));
+    assertTrue(summary.contains("\"AUDIT_LOG\""));
+    assertFalse(summary.contains("\"columns\""));
+    assertTrue(details.contains("\"CUSTOMER\""));
+    assertFalse(details.contains("\"AUDIT_LOG\""));
+    assertTrue(details.contains("\"columns\""));
+    assertTrue(details.contains("\"COUNTRY\""));
+  }
+
+  @Test
   void cacheClearFlagsDoNotRequireScriptFile() {
     var all = ParameterParser.parse("--clear-cache", "--cache-dir", tempDir.resolve("cache").toString());
     var target = ParameterParser.parse("--clear-cache", "input.json", "--cache-dir", tempDir.resolve("cache").toString());

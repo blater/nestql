@@ -51,7 +51,11 @@ autoCommit
     ;
 
 catalog
-    : K_CATALOG
+    : K_CATALOG catalogPattern?
+    ;
+
+catalogPattern
+    : ( name | STAR )+
     ;
 
 capture

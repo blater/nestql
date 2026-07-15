@@ -4,6 +4,7 @@ package blater.nestql;
 public final class Help {
   static final String USAGE = """
       Usage: nestql <script-file-or-text> [input-file] [name=value ...] [options]
+             nestql catalog [table-pattern] [connection/cache options]
              nestql --cache <input-file> [--cache-dir path]
              nestql --list-caches [--cache-dir path]
              nestql --clear-cache [input-file] [--cache-dir path]
@@ -27,6 +28,7 @@ public final class Help {
 
       AVAILABLE HELP TOPICS
           query          Run a script against a database or input-file cache.
+          catalog        List tables or show details for matching tables.
           cache          Query an XML, JSON, YAML, CSV, or Parquet input file.
           clear-cache    Remove all caches, one input's caches, or old caches.
           list-caches    List persistent input-file caches.
@@ -39,6 +41,35 @@ public final class Help {
           nestql --help query
           nestql --help connection
           nestql --help clear-cache
+      """;
+
+  static final String CATALOG_CMD = """
+      CATALOG
+          List database tables or show full details for matching tables.
+
+      SYNOPSIS
+          nestql catalog [table-pattern] [connection/cache options]
+
+      DESCRIPTION
+          With no pattern, catalog lists user table names only. Supplying a
+          table name or a pattern containing * includes table metadata and
+          column details for every match. Matching is case-insensitive.
+
+          Catalog uses an explicitly selected cache, otherwise a configured
+          JDBC connection, otherwise the active cache. Quote patterns containing
+          * so the shell does not expand them before nestQL receives them.
+
+      EXAMPLES
+          nestql catalog
+          nestql catalog customer
+          nestql catalog 'audit*' --output json
+          nestql catalog '*' --cache customers.json
+          nestql catalog -p database.properties
+
+      SEE ALSO
+          nestql --help cache
+          nestql --help connection
+          nestql --help output
       """;
 
   static final String QUERY_CMD = """
@@ -222,6 +253,7 @@ public final class Help {
 
       SYNOPSIS
           nestql <script-file-or-text> [input-file] [name=value ...] [options]
+          nestql catalog [table-pattern] [connection/cache options]
           nestql --cache <input-file> [--cache-dir path]
           nestql --list-caches [--cache-dir path]
           nestql --clear-cache [input-file] [--cache-dir path]
@@ -249,6 +281,11 @@ public final class Help {
 
           --help <topic>
               Print focused help for a command or option group.
+
+      COMMANDS
+          catalog [table-pattern]
+              List user table names. With a name or * pattern, include full
+              table and column details for every matching table.
 
       OPTIONS
           -p file
@@ -300,6 +337,8 @@ public final class Help {
           nestql report.nql -p database.properties
           nestql update.nql customers.json -p database.properties region=EMEA
           nestql --cache customers.json
+          nestql catalog
+          nestql catalog 'customer*' --output json
           nestql query.nql
           nestql query.nql customers.json --cache --output json
           nestql --list-caches
@@ -320,6 +359,7 @@ public final class Help {
     String info = switch (normalized) {
       case "help" -> HELP_ON_HELP;
       case "query", "run" -> QUERY_CMD;
+      case "catalog" -> CATALOG_CMD;
       case "cache" -> CACHE_CMD;
       case "clear-cache", "clear" -> CLEAR_CACHE_CMD;
       case "list-caches", "list" -> LIST_CACHES_CMD;

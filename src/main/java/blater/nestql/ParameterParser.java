@@ -22,6 +22,7 @@ public final class ParameterParser {
   public static final String SCRIPT_TEXT_PARAM = "NSQL_SCRIPT";
   public static final String HELP_PARAM = "NSQL_HELP";
   public static final String BRIEF_HELP = "-h";
+  public static final String CATALOG_PATTERN_PARAM = "NSQL_CATALOG_PATTERN";
 
   public static final String CACHE_CLEAR_ALL_PARAM = "NSQL_CACHE_CLEAR_ALL";
   public static final String CACHE_CLEAR_TARGET_PARAM = "NSQL_CACHE_CLEAR_TARGET";
@@ -378,6 +379,7 @@ public final class ParameterParser {
     return !(key.equals(SCRIPT_FILE_PARAM)
         || key.equals(SCRIPT_TEXT_PARAM)
         || key.equals(HELP_PARAM)
+        || key.equals(CATALOG_PATTERN_PARAM)
         || key.equals(INPUT_FILENAME)
         || key.equals(JDBC_PROPS_FILE_PARAM)
         || key.equals(OUTPUT_TYPE_PARAM)
@@ -433,6 +435,11 @@ public final class ParameterParser {
       if (!positionArguments.isEmpty()) {
         Log.fatal(IllegalArgumentException.class, "Unexpected argument: " + positionArguments.getFirst());
       }
+      return;
+    }
+
+    if (!positionArguments.isEmpty() && "catalog".equalsIgnoreCase(positionArguments.getFirst())) {
+      resolveCatalog(params, positionArguments.subList(1, positionArguments.size()));
       return;
     }
 
@@ -494,6 +501,40 @@ public final class ParameterParser {
       default -> Log.fatal(
           IllegalArgumentException.class,
           "Unexpected argument: " + positionArguments.get(2));
+    }
+  }
+
+  private static void resolveCatalog(Map<String, String> params, List<String> arguments) {
+    boolean explicitCache = Boolean.parseBoolean(params.get(CACHE_MODE_PARAM));
+    params.put(CATALOG_PATTERN_PARAM, "");
+
+    switch (arguments.size()) {
+      case 0 -> { }
+      case 1 -> {
+        String argument = arguments.getFirst();
+        if (explicitCache && isInputFile(argument)) {
+          params.put(INPUT_FILENAME, argument);
+        } else {
+          params.put(CATALOG_PATTERN_PARAM, argument);
+        }
+      }
+      case 2 -> {
+        if (!explicitCache) {
+          Log.fatal(IllegalArgumentException.class, "Unexpected argument: " + arguments.get(1));
+        }
+        String first = arguments.get(0);
+        String second = arguments.get(1);
+        boolean firstInput = isInputFile(first);
+        boolean secondInput = isInputFile(second);
+        if (firstInput == secondInput) {
+          Log.fatal(
+              IllegalArgumentException.class,
+              "Could not identify catalog pattern and input file from: " + first + ", " + second);
+        }
+        params.put(INPUT_FILENAME, firstInput ? first : second);
+        params.put(CATALOG_PATTERN_PARAM, firstInput ? second : first);
+      }
+      default -> Log.fatal(IllegalArgumentException.class, "Unexpected argument: " + arguments.get(2));
     }
   }
 

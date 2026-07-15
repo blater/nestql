@@ -247,6 +247,17 @@ nestql --clear-cache-older-than 7d
 nestql --cache-dir /tmp/nestql-cache --list-caches
 ```
 
+Catalog the active cache or a configured database without creating a script:
+
+```bash
+nestql catalog
+nestql catalog customer
+nestql catalog 'audit*' --output json
+nestql catalog '*' --cache customers.json
+```
+
+With no pattern, `catalog` lists table names only. A table name or `*` pattern returns full table and column details.
+
 ### Command-Line Database Connections
 
 The simple form infers the driver class, JDBC URL, host, and conventional port:

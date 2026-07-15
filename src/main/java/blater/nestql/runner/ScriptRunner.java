@@ -49,7 +49,7 @@ public final class ScriptRunner {
 
           case CAPTURE -> captureRowSets.putAll(Capture.captureTempRowset(stmt, params, sqlExecutor));
 
-          case CATALOG -> hierarchy = sqlExecutor.catalog();
+          case CATALOG -> hierarchy = sqlExecutor.catalog(stmt.getCatalogPattern());
 
           case SELECT -> hierarchy = RunQuery.runQuery(stmt, params, hierarchy, sqlExecutor);
 

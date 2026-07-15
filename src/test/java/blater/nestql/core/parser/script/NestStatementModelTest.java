@@ -43,12 +43,13 @@ class NestStatementModelTest {
   }
 
   @Test
-  void catalogStatementCarriesTypeOnly() {
-    var stmt = NestStatement.catalog();
+  void catalogStatementCarriesOptionalTablePattern() {
+    var stmt = NestStatement.catalog("person*");
 
     assertEquals(NestSqlStatementType.CATALOG, stmt.getType());
     assertNull(stmt.getSourceRowsetName());
     assertNull(stmt.getTargetName());
+    assertEquals("person*", stmt.getCatalogPattern());
     assertNull(stmt.getSql());
   }
 

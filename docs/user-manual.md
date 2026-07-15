@@ -259,6 +259,7 @@ For simplicity, command examples from this point onward use the default `nestql`
 
 ```bash
 nestql script-file [load-file] [param=value ...] [-p properties-file] [--output type] [--cache]
+nestql catalog [table-pattern] [connection/cache options]
 nestql --cache load-file [--cache-dir path]
 ```
 
@@ -291,6 +292,17 @@ nestql --help query
 `-h` prints brief usage help, while `--help` prints the complete `nestql(1)`
 manual page. `--help help` lists the available focused help topics, and
 `--help <topic>` prints help for one command or option group.
+
+Catalog inspection also does not require a script:
+
+```bash
+nestql catalog
+nestql catalog customer
+nestql catalog 'audit*' --output json
+nestql catalog '*' --cache customers.json
+```
+
+With no pattern, the command lists table names only. A table name or `*` pattern returns full table and column details. Catalog uses an explicitly selected cache, otherwise a configured JDBC connection, otherwise the active cache.
 
 ### Positional Arguments
 
@@ -472,6 +484,17 @@ It records both the cache root and generated cache directory, so a cache loaded 
 Cache reuse is automatic. Once a cache exists for an input path, nestQL reuses it until it is explicitly cleared. The cache is not synchronized with changes to the input file. An explicit Parquet `--parquet-record` name is part of the cache identity because it changes the generated table name; `--parquet-root` is not, because the hierarchy root is not materialized as a cache table. Clearing a Parquet input path clears all record-name variants for that source file.
 
 When a cache is built, nestQL creates input-structure tables. Object names become table names, direct scalar children become columns, and nested objects become related tables.
+
+Inspect the active cache or configured database with a `catalog` statement:
+
+```sql
+catalog;           -- list user tables without column details
+catalog customer;  -- show full details for one table
+catalog audit*;    -- show full details for matching tables
+catalog *;         -- show full details for every user table
+```
+
+Catalog patterns are case-insensitive and `*` matches any sequence of characters.
 
 Input-structure table rules:
 

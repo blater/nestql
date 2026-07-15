@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /*
  * Responsibility: Reads JDBC database metadata into the standard output hierarchy.
@@ -39,13 +40,13 @@ public final class Catalog {
 
   private Catalog() { }
 
-  public static Hierarchy read(Connection connection) {
+  public static Hierarchy read(Connection connection, String tablePattern) {
     Node root = new Node("catalog");
     try {
       DatabaseMetaData metadata = connection.getMetaData();
       try (ResultSet tables = metadata.getTables(null, null, "%", USER_TABLE_TYPES.toArray(String[]::new))) {
         while (tables.next()) {
-          addUserTable(root, metadata, tables);
+          addUserTable(root, metadata, tables, tablePattern);
         }
       }
       return new Hierarchy(root);
@@ -54,22 +55,38 @@ public final class Catalog {
     }
   }
 
-  private static void addUserTable(Node root, DatabaseMetaData metadata, ResultSet tables) throws SQLException {
+  private static void addUserTable(
+      Node root,
+      DatabaseMetaData metadata,
+      ResultSet tables,
+      String tablePattern) throws SQLException {
+
     String catalog = tables.getString("TABLE_CAT");
     String schema = tables.getString("TABLE_SCHEM");
-    if (!isUserSchema(catalog, schema)) {
+    String tableName = tables.getString("TABLE_NAME");
+    if (!isUserSchema(catalog, schema) || !matches(tableName, tablePattern)) {
       return;
     }
 
-    root.addNode(tableNode(
-        metadata,
-        catalog,
-        schema,
-        tables.getString("TABLE_NAME"),
-        tables.getString("TABLE_TYPE")));
+    if (tablePattern == null) {
+      root.addNode(tableSummaryNode(tableName));
+    } else {
+      root.addNode(tableDetailNode(
+          metadata,
+          catalog,
+          schema,
+          tableName,
+          tables.getString("TABLE_TYPE")));
+    }
   }
 
-  private static Node tableNode(
+  private static Node tableSummaryNode(String tableName) {
+    Node tableNode = new Node("table");
+    addValue(tableNode, "name", tableName);
+    return tableNode;
+  }
+
+  private static Node tableDetailNode(
       DatabaseMetaData metadata,
       String catalog,
       String schema,
@@ -104,6 +121,16 @@ public final class Catalog {
     addValue(columnNode, "nullable", Boolean.toString(columns.getInt("NULLABLE") == DatabaseMetaData.columnNullable));
     addValue(columnNode, "position", columns.getString("ORDINAL_POSITION"));
     return columnNode;
+  }
+
+  private static boolean matches(String tableName, String tablePattern) {
+    if (tablePattern == null) {
+      return true;
+    }
+    String regex = "^" + Pattern.quote(tablePattern).replace("*", "\\E.*\\Q") + "$";
+    return Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE)
+        .matcher(tableName)
+        .matches();
   }
 
   private static boolean isUserSchema(String catalog, String schema) {

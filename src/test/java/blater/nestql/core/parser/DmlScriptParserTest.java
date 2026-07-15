@@ -123,6 +123,20 @@ class DmlScriptParserTest {
     assertEquals(OutputType.JSON, script.outputType());
     assertEquals(1, script.statements().size());
     assertEquals(NestSqlStatementType.CATALOG, script.statements().getFirst().getType());
+    assertNull(script.statements().getFirst().getCatalogPattern());
+  }
+
+  @Test
+  void parsesCatalogTablePatterns() throws Exception {
+    NestScript script = ScriptParser.parse("""
+        catalog person;
+        catalog t*;
+        catalog *;
+        """);
+
+    assertEquals("person", script.statements().get(0).getCatalogPattern());
+    assertEquals("t*", script.statements().get(1).getCatalogPattern());
+    assertEquals("*", script.statements().get(2).getCatalogPattern());
   }
 
   @Test

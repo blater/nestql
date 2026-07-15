@@ -20,6 +20,7 @@ public class NestStatement {
   private List<ReturnMapping> returnMappings = null;
   private final MappingPlan plan;
   private final String namespace;
+  private final String catalogPattern;
   private ErrorStrategy errorHandling = new ErrorStrategy(FAIL, FAIL);
 
   /**
@@ -30,6 +31,7 @@ public class NestStatement {
     this.sql = sql;
     this.plan = plan;
     this.namespace = namespace;
+    this.catalogPattern = null;
   }
 
   /**
@@ -45,6 +47,15 @@ public class NestStatement {
     this.returnMappings = returnMappings;
     this.plan = null;
     this.namespace = null;
+    this.catalogPattern = null;
+  }
+
+  private NestStatement(String catalogPattern) {
+    this.type = NestSqlStatementType.CATALOG;
+    this.sql = null;
+    this.plan = null;
+    this.namespace = null;
+    this.catalogPattern = catalogPattern;
   }
 
   // INSERT/UPDATE/DELETE writing mapped rows to a table, optionally sourced from a temp rowset.
@@ -63,8 +74,8 @@ public class NestStatement {
     return new NestStatement(SELECT, sql, plan, namespace);
   }
 
-  public static NestStatement catalog() {
-    return new NestStatement(NestSqlStatementType.CATALOG, null, null, null, List.of(), List.of());
+  public static NestStatement catalog(String tablePattern) {
+    return new NestStatement(tablePattern);
   }
 
   // CAPTURE of a query result into an in-memory temp rowset named by targetName.
