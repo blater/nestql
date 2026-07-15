@@ -144,6 +144,34 @@ class MainTest {
   }
 
   @Test
+  void markdownOutputCanBeSelectedByScriptOrCommandLine() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    Path markdownScript = write("markdown-query.nql", """
+        output markdown;
+        select 1 into {result.value};
+        """);
+    Path overriddenScript = write("overridden-query.nql", """
+        output xml;
+        select 1 into {result.value};
+        """);
+
+    String scriptOutput = captureStdout(
+        () -> Main.main(markdownScript.toString(), "-p", properties.toString()));
+    String commandOutput = captureStdout(
+        () -> Main.main(
+            overriddenScript.toString(), "-p", properties.toString(), "--output", "markdown"));
+
+    String expected = """
+        | value |
+        | --- |
+        | 1 |
+        """;
+    assertEquals(expected, scriptOutput);
+    assertEquals(expected, commandOutput);
+  }
+
+  @Test
   void inlineScriptArgumentCanReplaceScriptFile() throws Exception {
     String url = databaseUrl();
     Path properties = propertiesFile(url);
@@ -258,11 +286,12 @@ class MainTest {
     String details = captureStdout(() -> Main.main(
         "catalog", "customer", "--cache", input.toString(),
         "--cache-dir", cacheDir.toString(), "--output", "json"));
-    String summary = captureStdout(() -> Main.main("catalog", "--output", "json"));
+    String summary = captureStdout(() -> Main.main("catalog"));
 
-    assertTrue(summary.contains("\"CUSTOMER\""));
-    assertTrue(summary.contains("\"AUDIT_LOG\""));
-    assertFalse(summary.contains("\"columns\""));
+    assertTrue(summary.startsWith("| name |\n| --- |\n"));
+    assertTrue(summary.contains("| CUSTOMER |"));
+    assertTrue(summary.contains("| AUDIT\\_LOG |"));
+    assertFalse(summary.contains("columns"));
     assertTrue(details.contains("\"CUSTOMER\""));
     assertFalse(details.contains("\"AUDIT_LOG\""));
     assertTrue(details.contains("\"columns\""));

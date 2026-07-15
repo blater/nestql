@@ -114,6 +114,16 @@ class DmlScriptParserTest {
   }
 
   @Test
+  void parsesMarkdownOutputDirective() throws Exception {
+    NestScript script = ScriptParser.parse("""
+        output markdown;
+        select 1 into {result.value};
+        """);
+
+    assertEquals(OutputType.MARKDOWN, script.outputType());
+  }
+
+  @Test
   void parsesCatalogStatement() throws Exception {
     NestScript script = ScriptParser.parse("""
         output json;

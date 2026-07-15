@@ -97,19 +97,10 @@ structure {people.person} key (personid);
 
 `into {people.person.firstname}` maps the selected value into the output hierarchy. `structure {people.person} key (personid)` says that rows with the same person ID contribute to one `person` object.
 
-Default CLI output is XML:
+Default query output is JSON:
 
-```xml
-<people>
-  <person>
-    <firstname>Alice</firstname>
-    <surname>Adams</surname>
-  </person>
-  <person>
-    <firstname>Bob</firstname>
-    <surname>Baker</surname>
-  </person>
-</people>
+```json
+{"people":{"person":[{"firstname":"Alice","surname":"Adams"},{"firstname":"Bob","surname":"Baker"}]}}
 ```
 
 ### Use XML Input To Update A Database
@@ -302,7 +293,7 @@ nestql catalog 'audit*' --output json
 nestql catalog '*' --cache customers.json
 ```
 
-With no pattern, the command lists table names only. A table name or `*` pattern returns full table and column details. Catalog uses an explicitly selected cache, otherwise a configured JDBC connection, otherwise the active cache.
+With no pattern, the command lists table names only. A table name or `*` pattern returns full table and column details. Catalog uses an explicitly selected cache, otherwise a configured JDBC connection, otherwise the active cache. The command-line catalog form defaults to Markdown; `--output` can select another format.
 
 ### Positional Arguments
 
@@ -335,7 +326,7 @@ With explicit `--cache`, an input file selects its cache. Without an input file,
 | `--jdbc-database url`      | Set the complete `jdbc.database` JDBC URL. |
 | `--jdbc-username username` | Set the exact `jdbc.username` value. |
 | `--jdbc-password password` | Set the exact `jdbc.password` value. |
-| `--output type`, `-o type` | Write output as `xml`, `json`, `csv`, or `yaml`. |
+| `--output type`, `-o type` | Write output as `xml`, `json`, `csv`, `yaml`, or `markdown`. |
 | `--cache`                  | Load, select, or query a local cache; explicit cache mode overrides JDBC settings. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
 | `--clear-cache`            | Clear all caches, or one cache if followed by an input file. |
@@ -663,9 +654,11 @@ Output format is selected in this order:
 
 1. Command-line `--output type` or `-o type`.
 2. The first `output type;` directive in the script.
-3. XML by default.
+3. Markdown for the command-line `catalog` command.
+4. JSON otherwise.
 
-Accepted output types are `xml`, `json`, `csv`, and `yaml`, case-insensitively.
+Accepted output types are `xml`, `json`, `csv`, `yaml`, and `markdown`, case-insensitively. Markdown output renders
+the result as one table, using dotted columns for nested scalar values and compact JSON cells for repeated objects.
 
 Examples:
 
@@ -709,7 +702,7 @@ Use `output` to set the script's preferred output format:
 output json;
 ```
 
-Accepted formats are `xml`, `json`, `csv`, and `yaml`. The keyword and format are case-insensitive. If multiple `output` directives appear, only the first one is used. A command-line `--output` or `-o` flag overrides the script directive.
+Accepted formats are `xml`, `json`, `csv`, `yaml`, and `markdown`. The keyword and format are case-insensitive. If multiple `output` directives appear, only the first one is used. A command-line `--output` or `-o` flag overrides the script directive.
 
 ### Comments
 
@@ -1447,6 +1440,21 @@ CSV is a flat format, so hierarchy is flattened:
 - Repeated nested object nodes serialize as compact JSON in one cell.
 - Attributes become ordinary columns.
 - Null nodes become empty cells.
+
+### Markdown Output Adapter
+
+Writer: `MarkdownOutputWriter`.
+
+Markdown uses the same tabular projection as CSV and renders one table:
+
+- If the root contains only one repeated child group, those children become table rows.
+- Otherwise, the root itself is written as one row.
+- Nested scalar nodes become dotted column names.
+- Repeated scalar nodes use line breaks within one cell.
+- Repeated nested object nodes serialize as compact JSON in one cell.
+- Attributes become ordinary columns.
+- Null nodes become empty cells.
+- Cell content is escaped so data cannot add columns or inject Markdown or HTML formatting.
 
 ## Known Limitations
 

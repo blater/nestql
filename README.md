@@ -212,7 +212,7 @@ Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`,
 | `--jdbc-database URL` | Set the complete `jdbc.database` JDBC URL. |
 | `--jdbc-username USER` | Set the exact `jdbc.username` value. |
 | `--jdbc-password PASSWORD` | Set the exact `jdbc.password` value. |
-| `--output TYPE`, `-o TYPE` | Select `xml`, `json`, `csv`, or `yaml` output. |
+| `--output TYPE`, `-o TYPE` | Select `xml`, `json`, `csv`, `yaml`, or `markdown` output. |
 | `--output=TYPE` | Equals-form of `--output TYPE`. |
 | `--cache` | Load or select an input file's persistent local H2 cache. With no input, query the active cache. Explicit cache mode overrides JDBC settings. |
 | `--cache-dir PATH` | Store query caches under `PATH` instead of `~/.nestql/cache`. |
@@ -233,8 +233,8 @@ An equals form with no value supplies an explicit empty string. A separated
 option requires a following value, so use `--password=-secret` when a value
 begins with `-`.
 
-The command-line output option takes precedence over an `output xml|json|csv|yaml;` directive in the script. Without
-either, output defaults to XML.
+The command-line output option takes precedence over an `output xml|json|csv|yaml|markdown;` directive in the script. Without
+either, output defaults to JSON. The command-line `catalog` command defaults to Markdown.
 
 Cache maintenance examples:
 

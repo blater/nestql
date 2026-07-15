@@ -33,7 +33,7 @@ public final class Help {
           clear-cache    Remove all caches, one input's caches, or old caches.
           list-caches    List persistent input-file caches.
           connection     Configure JDBC connections from options or properties.
-          output         Select XML, JSON, YAML, or CSV output.
+          output         Select XML, JSON, YAML, CSV, or Markdown output.
           parameters     Supply runtime template parameters.
           parquet        Override Parquet hierarchy and record names.
 
@@ -58,6 +58,7 @@ public final class Help {
           Catalog uses an explicitly selected cache, otherwise a configured
           JDBC connection, otherwise the active cache. Quote patterns containing
           * so the shell does not expand them before nestQL receives them.
+          Command-line catalog output defaults to Markdown; --output overrides it.
 
       EXAMPLES
           nestql catalog
@@ -200,9 +201,11 @@ public final class Help {
           nestql <script> [other arguments] -o <type>
 
       DESCRIPTION
-          Accepted types are xml, json, yaml, and csv, case-insensitively. The
+          Accepted types are xml, json, yaml, csv, and markdown,
+          case-insensitively. The
           command-line option overrides the script's first 'output type;'
-          directive. XML is the default when neither is supplied.
+          directive. JSON is the default when neither is supplied. The
+          command-line catalog command defaults to Markdown.
 
       EXAMPLES
           nestql report.nql -p database.properties --output json
@@ -302,7 +305,7 @@ public final class Help {
               Set exact JDBC connection properties.
 
           --output type, -o type
-              Write xml, json, yaml, or csv output.
+              Write xml, json, yaml, csv, or markdown output.
 
           --cache
               Load, select, or query a persistent local H2 cache. An explicit

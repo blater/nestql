@@ -8,16 +8,10 @@ import blater.nestql.util.Log;
  */
 public interface OutputWriter {
   static OutputWriter of(OutputType type) {
-    if (type == OutputType.XML)
-      return new XmlOutputWriter();
-    else if (type == OutputType.JSON)
-      return new JsonOutputWriter();
-    else if (type == OutputType.YAML)
-      return new YamlOutputWriter();
-    else if (type == OutputType.CSV)
-      return new CsvOutputWriter();
-    else
-      return Log.fatal(IllegalArgumentException.class, "unknown outputWriter type");
+    if (type == null) {
+      return Log.fatal(IllegalArgumentException.class, "output type is required");
+    }
+    return type.writer();
   }
 
   void write(Hierarchy result);

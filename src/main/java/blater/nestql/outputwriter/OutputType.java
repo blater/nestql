@@ -2,9 +2,7 @@ package blater.nestql.outputwriter;
 
 import blater.nestql.ParameterParser;
 import blater.nestql.parser.script.NestScript;
-import blater.nestql.util.Log;
 
-import java.util.Locale;
 import java.util.Map;
 
 /*
@@ -14,36 +12,44 @@ public enum OutputType {
   XML(new XmlOutputWriter()),
   JSON(new JsonOutputWriter()),
   YAML(new YamlOutputWriter()),
-  CSV(new CsvOutputWriter())
+  CSV(new CsvOutputWriter()),
+  MARKDOWN(new MarkdownOutputWriter())
   ;
 
+  final static OutputType DEFAULT_OUTPUT_TYPE = JSON;
   final OutputWriter outputWriter;
 
   OutputType(OutputWriter outputWriter) {
     this.outputWriter = outputWriter;
   }
 
+  OutputWriter writer() {
+    return outputWriter;
+  }
+
   public static OutputType outputTypeFor(NestScript script, Map<String, String> params) {
     String cliOutputType = params.get(ParameterParser.OUTPUT_TYPE_PARAM);
     if (cliOutputType != null) {
       return OutputType.fromName(cliOutputType);
-    }
-    if (script != null && script.outputType() != null) {
+    } else if (script != null && script.outputType() != null) {
       return script.outputType();
-    }
-    return OutputType.XML;
+    } else if (params.containsKey(ParameterParser.CATALOG_PATTERN_PARAM)) {
+      return MARKDOWN;
+    } else
+      return DEFAULT_OUTPUT_TYPE;
   }
 
-  public static OutputType fromName(String value) {
-    if (value == null || value.isBlank()) {
-      return Log.fatal(IllegalArgumentException.class, "output type must be one of xml, json, csv, yaml");
+  public static OutputType fromName(String name) {
+    if (name == null || name.isBlank()) {
+      return DEFAULT_OUTPUT_TYPE;
     }
-    return switch (value.trim().toLowerCase(Locale.ROOT)) {
+    return switch (name.trim().toLowerCase()) {
       case "xml" -> XML;
       case "json" -> JSON;
       case "csv" -> CSV;
       case "yaml" -> YAML;
-      default -> Log.fatal(IllegalArgumentException.class, "unknown output type: " + value);
+      case "markdown" -> MARKDOWN;
+      default -> DEFAULT_OUTPUT_TYPE;
     };
   }
 }

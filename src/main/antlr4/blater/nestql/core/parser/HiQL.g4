@@ -23,6 +23,7 @@ outputFormat
     | K_JSON
     | K_CSV
     | K_YAML
+    | K_MARKDOWN
     ;
 
 statementBlock
@@ -314,7 +315,7 @@ name
 keyword
     : K_UPDATE | K_TABLE | K_INSERT | K_DELETE | K_FROM | K_TEMP
     | K_USING | K_SET | K_CAPTURE | K_EXECUTE | K_PROCEDURE
-    | K_OUTPUT | K_XML | K_JSON | K_CSV | K_YAML
+    | K_OUTPUT | K_XML | K_JSON | K_CSV | K_YAML | K_MARKDOWN
     | K_AUTOCOMMIT | K_CATALOG | K_ON | K_OFF | K_TRUE | K_FALSE
     | K_ABORT | K_ROLLBACK | K_ONERROR | K_ONWARNING
     | K_XMLUNION | K_XMLROOT | K_SCHEMA | K_NAMESPACE | K_HIERARCHY | K_UNION
@@ -401,6 +402,7 @@ K_XML        : X M L ;
 K_JSON       : J S O N ;
 K_CSV        : C S V ;
 K_YAML       : Y A M L ;
+K_MARKDOWN   : M A R K D O W N ;
 
 // xmlselect keywords
 K_XMLSELECT  : X M L S E L E C T ;
