@@ -18,6 +18,10 @@ public record CacheSource(
     return from(inputFilename, inputType, Map.of());
   }
 
+  public static CacheSource from(String inputFilename, Map<String, String> parameters) {
+    return from(inputFilename, InputType.fromFilename(inputFilename), parameters);
+  }
+
   public static CacheSource from(
       String inputFilename,
       InputType inputType,

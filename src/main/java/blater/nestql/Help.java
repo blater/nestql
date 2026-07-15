@@ -4,6 +4,7 @@ package blater.nestql;
 public final class Help {
   static final String USAGE = """
       Usage: nestql <script-file-or-text> [input-file] [name=value ...] [options]
+             nestql --cache <input-file> [--cache-dir path]
              nestql --list-caches [--cache-dir path]
              nestql --clear-cache [input-file] [--cache-dir path]
              nestql --clear-cache-older-than age [--cache-dir path]
@@ -50,7 +51,8 @@ public final class Help {
       DESCRIPTION
           A script may be a filename or inline script text. Supply an input file
           for mapped DML, or combine it with --cache to query the file through a
-          persistent local H2 database.
+          persistent local H2 database. With no input or JDBC connection, the
+          script queries the active cache.
 
       EXAMPLES
           nestql report.nql -p database.properties
@@ -70,14 +72,20 @@ public final class Help {
           Query a structured input file through a persistent local H2 cache.
 
       SYNOPSIS
+          nestql --cache <input-file> [--cache-dir path]
           nestql <script> <input-file> --cache [--cache-dir path] [--output type]
+          nestql <script> [--output type]
 
       DESCRIPTION
           Supported input types are XML, JSON, YAML, CSV, and Parquet. Caches are
           stored under ~/.nestql/cache by default and reused until explicitly
-          cleared. Cache mode cannot be combined with external JDBC options.
+          cleared. Loading or explicitly selecting a cache makes it active. A
+          script with no input or JDBC connection queries the active cache.
+          Explicit --cache takes precedence over supplied JDBC settings.
 
-      EXAMPLE
+      EXAMPLES
+          nestql --cache customers.json
+          nestql totals.nql
           nestql totals.nql customers.json --cache --output json
 
       SEE ALSO
@@ -115,7 +123,8 @@ public final class Help {
           nestql --list-caches [--cache-dir path]
 
       DESCRIPTION
-          Displays each cache's input type, creation time, and source path.
+          Displays each cache's input type, creation time, and source path. The
+          active cache is marked with an asterisk.
 
       EXAMPLE
           nestql --list-caches --cache-dir /tmp/nestql-cache
@@ -213,6 +222,7 @@ public final class Help {
 
       SYNOPSIS
           nestql <script-file-or-text> [input-file] [name=value ...] [options]
+          nestql --cache <input-file> [--cache-dir path]
           nestql --list-caches [--cache-dir path]
           nestql --clear-cache [input-file] [--cache-dir path]
           nestql --clear-cache-older-than age [--cache-dir path]
@@ -258,7 +268,8 @@ public final class Help {
               Write xml, json, yaml, or csv output.
 
           --cache
-              Query the input file through a persistent local H2 cache.
+              Load, select, or query a persistent local H2 cache. An explicit
+              cache takes precedence over JDBC settings.
 
           --cache-dir path
               Store caches somewhere other than ~/.nestql/cache.
@@ -279,12 +290,17 @@ public final class Help {
               Supply a runtime template parameter.
 
       FILES
+          ~/.nestql/config.properties
+              Stores the active cache selection.
+
           ~/.nestql/cache
               Default directory for persistent input-file caches.
 
       EXAMPLES
           nestql report.nql -p database.properties
           nestql update.nql customers.json -p database.properties region=EMEA
+          nestql --cache customers.json
+          nestql query.nql
           nestql query.nql customers.json --cache --output json
           nestql --list-caches
           nestql --clear-cache-older-than 7d

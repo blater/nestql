@@ -6,6 +6,8 @@ import blater.nestql.parser.ScriptLoader;
 import blater.nestql.parser.ScriptParser;
 import blater.nestql.parser.script.NestScript;
 import blater.nestql.runner.ScriptRunner;
+import blater.nestql.runner.sql.cache.CacheExecution;
+import blater.nestql.runner.sql.cache.CacheSource;
 import blater.nestql.runner.sql.cache.PersistentCache;
 
 import static blater.nestql.ParameterParser.*;
@@ -31,6 +33,12 @@ public class Main {
                || params.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)
     ) {
       PersistentCache.clear(params);
+    } else if (Boolean.parseBoolean(params.get(CACHE_MODE_PARAM))
+        && !params.containsKey(SCRIPT_FILE_PARAM)
+        && !params.containsKey(SCRIPT_TEXT_PARAM)) {
+      boolean loaded = CacheExecution.loadAndActivate(params);
+      String source = CacheSource.normalizedSourcePath(params.get(INPUT_FILENAME)).toString();
+      System.out.println((loaded ? "Loaded cache for " : "Using existing cache for ") + source);
     } else {
       String inputScript = params.containsKey(SCRIPT_TEXT_PARAM)
           ? ScriptLoader.loadText(params.get(SCRIPT_TEXT_PARAM))

@@ -2,6 +2,7 @@ package blater.nestql.runner.sql.cache;
 
 import blater.nestql.ParameterParser;
 import blater.nestql.inputreader.InputType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,6 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PersistentCacheTest {
   @TempDir
   Path tempDir;
+
+  @BeforeEach
+  void clearActiveCacheSelection() throws Exception {
+    Files.deleteIfExists(PersistentCache.configFile());
+  }
 
   @Test
   void reusesCacheWhenInputFileMatchesMetadata() throws Exception {
@@ -205,6 +211,27 @@ class PersistentCacheTest {
     assertEquals(1, cleared);
     assertFalse(Files.exists(oldCache.cacheDir()));
     assertTrue(Files.exists(recentCache.cacheDir()));
+  }
+
+  @Test
+  void activeCacheIsListedAndClearedWithoutLosingOtherConfiguration() throws Exception {
+    Map<String, String> params = cacheParams();
+    Path input = write("active.json", "{\"name\":\"Fred\"}");
+    CacheHandle handle = preparedCache(input, params);
+    Path configFile = PersistentCache.configFile();
+    Files.createDirectories(configFile.getParent());
+    Files.writeString(configFile, "unrelated=value\n");
+
+    PersistentCache.activate(handle);
+
+    assertEquals(handle.cacheDir(), PersistentCache.active().orElseThrow().cacheDir());
+    assertTrue(PersistentCache.listCaches(params).getFirst().active());
+    assertTrue(Files.readString(configFile).contains("unrelated=value"));
+
+    PersistentCache.clearForInput(input.toString(), params);
+
+    assertTrue(PersistentCache.active().isEmpty());
+    assertTrue(Files.readString(configFile).contains("unrelated=value"));
   }
 
   @Test

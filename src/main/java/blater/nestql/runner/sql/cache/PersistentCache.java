@@ -3,6 +3,8 @@ package blater.nestql.runner.sql.cache;
 import blater.nestql.util.Log;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -17,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.stream.Stream;
 
 import static blater.nestql.ParameterParser.*;
@@ -29,6 +32,8 @@ public final class PersistentCache {
   private static final String CACHE_DATABASE = "cache";
   private static final String H2_DATABASE_FILE = CACHE_DATABASE + ".mv.db";
   private static final int METADATA_ROW_ID = 1;
+  private static final String ACTIVE_CACHE_ROOT = "active.cache.root";
+  private static final String ACTIVE_CACHE_DIRECTORY = "active.cache.directory";
 
   private PersistentCache() { }
 
@@ -57,9 +62,9 @@ public final class PersistentCache {
       return;
     }
 
-    Log.info("inputType\tcreated\tsource");
+    Log.info("  inputType\tcreated\tsource");
     for (var entry : entries) {
-      Log.info(entry.inputType()
+      Log.info((entry.active() ? "* " : "  ") + entry.inputType()
           + "\t" + ((entry.createdMillis()  <= 0) ? "-": Instant.ofEpochMilli(entry.createdMillis()).toString())
           + "\t" + entry.sourcePath());
     }
@@ -85,12 +90,47 @@ public final class PersistentCache {
     writeMetadata(handle.cacheDir(), handle.source());
   }
 
+  public static void activate(CacheHandle handle) {
+    Path cacheDir = handle.cacheDir().toAbsolutePath().normalize();
+    Path root = cacheDir.getParent();
+    if (root == null || cacheDir.getFileName() == null) {
+      Log.fatal(IllegalArgumentException.class, "Invalid cache directory: " + cacheDir);
+    }
+    Properties config = readConfig();
+    config.setProperty(ACTIVE_CACHE_ROOT, root.toString());
+    config.setProperty(ACTIVE_CACHE_DIRECTORY, cacheDir.getFileName().toString());
+    writeConfig(config);
+  }
+
+  public static Optional<CacheHandle> active() {
+    Optional<Path> configured = configuredActiveCacheDirectory();
+    if (configured.isEmpty()) {
+      return Optional.empty();
+    }
+
+    Path cacheDir = configured.get();
+    Optional<Metadata> metadata = readMetadata(cacheDir);
+    if (metadata.isEmpty()) {
+      clearActiveSelection();
+      return Optional.empty();
+    }
+
+    try {
+      CacheSource source = metadata.get().source();
+      return Optional.of(new CacheHandle(cacheDir, jdbcUrl(cacheDir), false, source));
+    } catch (RuntimeException ex) {
+      clearActiveSelection();
+      return Optional.empty();
+    }
+  }
+
   static int clearAll(Map<String, String> params) {
     int cleared = 0;
     for (Path cacheDir : cacheDirectories(params)) {
       deleteDirectory(cacheDir);
       cleared++;
     }
+    clearActiveIfMissing();
     return cleared;
   }
 
@@ -100,14 +140,15 @@ public final class PersistentCache {
       return List.of();
     }
 
+    Optional<Path> activeCache = active().map(CacheHandle::cacheDir);
     try (Stream<Path> paths = Files.list(root)) {
       return paths.filter(Files::isDirectory)
-          .map(PersistentCache::readMetadata)
-          .flatMap(Optional::stream)
-          .map(metadata -> new CacheEntry(
+          .map(cacheDir -> readMetadata(cacheDir).map(metadata -> new CacheEntry(
               metadata.sourcePath(),
               metadata.inputType(),
-              metadata.createdMillis()))
+              metadata.createdMillis(),
+              activeCache.map(cacheDir::equals).orElse(false))))
+          .flatMap(Optional::stream)
           .sorted(Comparator.comparing(CacheEntry::sourcePath))
           .toList();
     } catch (IOException ex) {
@@ -131,6 +172,7 @@ public final class PersistentCache {
       deleteDirectory(legacyCacheDir);
       cleared++;
     }
+    clearActiveIfMissing();
     return cleared;
   }
 
@@ -143,6 +185,7 @@ public final class PersistentCache {
         cleared++;
       }
     }
+    clearActiveIfMissing();
     return cleared;
   }
 
@@ -174,6 +217,12 @@ public final class PersistentCache {
       configured = Path.of(System.getProperty("user.home"), ".nestql", "cache").toString();
     }
     return Path.of(configured).toAbsolutePath().normalize();
+  }
+
+  static Path configFile() {
+    return Path.of(System.getProperty("user.home"), ".nestql", "config.properties")
+        .toAbsolutePath()
+        .normalize();
   }
 
   private static String jdbcUrl(Path cacheDir) {
@@ -283,6 +332,92 @@ public final class PersistentCache {
       return paths.filter(Files::isDirectory).toList();
     } catch (IOException ex) {
       return Log.fatal(IllegalStateException.class, "Could not list cache directory: " + root, ex);
+    }
+  }
+
+  private static Optional<Path> configuredActiveCacheDirectory() {
+    Properties config = readConfig();
+    String rootValue = config.getProperty(ACTIVE_CACHE_ROOT);
+    String directoryValue = config.getProperty(ACTIVE_CACHE_DIRECTORY);
+    boolean rootMissing = rootValue == null || rootValue.isBlank();
+    boolean directoryMissing = directoryValue == null || directoryValue.isBlank();
+    if (rootMissing && directoryMissing) {
+      return Optional.empty();
+    }
+    if (rootMissing || directoryMissing) {
+      clearActiveSelection();
+      return Optional.empty();
+    }
+
+    try {
+      Path directoryName = Path.of(directoryValue);
+      if (directoryName.getNameCount() != 1 || directoryName.isAbsolute()) {
+        clearActiveSelection();
+        return Optional.empty();
+      }
+      Path root = Path.of(rootValue).toAbsolutePath().normalize();
+      Path cacheDir = root.resolve(directoryName).normalize();
+      if (!root.equals(cacheDir.getParent())) {
+        clearActiveSelection();
+        return Optional.empty();
+      }
+      return Optional.of(cacheDir);
+    } catch (RuntimeException ex) {
+      clearActiveSelection();
+      return Optional.empty();
+    }
+  }
+
+  private static Properties readConfig() {
+    Properties config = new Properties();
+    Path file = configFile();
+    if (!Files.exists(file)) {
+      return config;
+    }
+    try (InputStream input = Files.newInputStream(file)) {
+      config.load(input);
+      return config;
+    } catch (IOException ex) {
+      return Log.fatal(IllegalStateException.class, "Could not read nestQL configuration: " + file, ex);
+    }
+  }
+
+  private static void writeConfig(Properties config) {
+    Path file = configFile();
+    try {
+      Files.createDirectories(file.getParent());
+      try (OutputStream output = Files.newOutputStream(file)) {
+        config.store(output, "nestQL configuration");
+      }
+    } catch (IOException ex) {
+      Log.fatal(IllegalStateException.class, "Could not write nestQL configuration: " + file, ex);
+    }
+  }
+
+  private static void clearActiveIfMissing() {
+    Optional<Path> activeCache = configuredActiveCacheDirectory();
+    if (activeCache.isPresent() && !Files.exists(activeCache.get())) {
+      clearActiveSelection();
+    }
+  }
+
+  private static void clearActiveSelection() {
+    Properties config = readConfig();
+    boolean changed = config.remove(ACTIVE_CACHE_ROOT) != null;
+    changed = config.remove(ACTIVE_CACHE_DIRECTORY) != null || changed;
+    if (!changed) {
+      return;
+    }
+
+    Path file = configFile();
+    if (config.isEmpty()) {
+      try {
+        Files.deleteIfExists(file);
+      } catch (IOException ex) {
+        Log.fatal(IllegalStateException.class, "Could not update nestQL configuration: " + file, ex);
+      }
+    } else {
+      writeConfig(config);
     }
   }
 

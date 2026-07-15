@@ -41,7 +41,7 @@ jdbc.password=
 
 ### Query An Input File With `--cache`
 
-`--cache` loads the input file into a persistent local H2 cache, then runs the script against generated SQL tables. No external JDBC properties are required.
+`--cache` loads the input file into a persistent local H2 cache. It can be queried immediately or made active for repeated queries without repeating the input path. No external JDBC properties are required.
 
 Input file:
 
@@ -73,7 +73,8 @@ structure {result.customer} key (c.id);
 Run:
 
 ```bash
-nestql customers.nql customers.json --cache
+nestql --cache customers.json
+nestql customers.nql
 ```
 
 Output:
@@ -258,6 +259,7 @@ For simplicity, command examples from this point onward use the default `nestql`
 
 ```bash
 nestql script-file [load-file] [param=value ...] [-p properties-file] [--output type] [--cache]
+nestql --cache load-file [--cache-dir path]
 ```
 
 Arguments can appear in any unambiguous order.
@@ -269,6 +271,12 @@ nestql --clear-cache
 nestql --clear-cache customers.json
 nestql --clear-cache-older-than 6h
 nestql --list-caches
+```
+
+Standalone cache loading also does not require a script:
+
+```bash
+nestql --cache customers.json
 ```
 
 Command-line help does not require a script:
@@ -288,12 +296,12 @@ manual page. `--help help` lists the available focused help topics, and
 
 | Argument      | Meaning                                                  |
 |---------------|----------------------------------------------------------|
-| `script-file` | Required. The nestQL script to load and run.             |
-| `load-file`   | Optional input data file. Required by `--cache`; otherwise used by mapped DML statements. |
+| `script-file` | The nestQL script to load and run. Not required for standalone cache loading or maintenance. |
+| `load-file`   | Optional input data file. With standalone `--cache`, it is loaded and made active; otherwise used by cached queries or mapped DML statements. |
 
 If a script only queries the database and produces output, the load file is not read. If a mapped DML statement needs input and the file is missing, execution fails when that statement is reached.
 
-In `--cache` mode, the load file is read before the script runs and is required.
+With explicit `--cache`, an input file selects its cache. Without an input file, the active cache is used. With neither `--cache` nor JDBC settings, a script also falls back to the active cache.
 
 ### Options
 
@@ -316,7 +324,7 @@ In `--cache` mode, the load file is read before the script runs and is required.
 | `--jdbc-username username` | Set the exact `jdbc.username` value. |
 | `--jdbc-password password` | Set the exact `jdbc.password` value. |
 | `--output type`, `-o type` | Write output as `xml`, `json`, `csv`, or `yaml`. |
-| `--cache`                  | Load or reuse the input file's local query cache. |
+| `--cache`                  | Load, select, or query a local cache; explicit cache mode overrides JDBC settings. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
 | `--clear-cache`            | Clear all caches, or one cache if followed by an input file. |
 | `--clear-cache-older-than duration` | Clear caches not used within a duration such as `30m`, `6h`, or `7d`. |
@@ -405,7 +413,7 @@ The selected executable must contain the requested JDBC dependency. If it does n
 
 Supplied values are used as written. nestQL does not validate port ranges, encode URL components, or reconcile inconsistent credentials; the JDBC driver or database reports those errors. For example, `--host=` and `--port=` supply explicit empty values rather than selecting defaults, while omitting those options selects documented defaults. The simple form requires `--db` and `--database` together and does not decompose an existing `jdbc.database` URL from a properties file.
 
-JDBC options cannot be combined with `--cache` or cache-maintenance commands because those commands own their local H2 connection. Command-line passwords may be visible in shell history and process listings; prefer a protected properties file for reusable credentials.
+Explicit `--cache` takes precedence over JDBC settings because cache operations own their local H2 connection. Non-JDBC values from the same properties file remain available as runtime parameters. Cache-maintenance commands ignore JDBC settings. Without `--cache`, explicit JDBC settings take precedence over the active-cache fallback. Command-line passwords may be visible in shell history and process listings; prefer a protected properties file for reusable credentials.
 
 ### Input File Type Selection
 
@@ -423,13 +431,27 @@ Extension matching is case-insensitive. Blank or missing input filenames preserv
 
 ### Cache Query Mode
 
-`--cache` loads the input file into a persistent local H2 database before running the script. This mode is for querying arbitrary XML, JSON, YAML, CSV, or Parquet files without supplying external JDBC properties.
+`--cache` loads an input file into a persistent local H2 database. It can load a cache without a script, select a specific cache for a query, or explicitly request the active cache.
 
-Example:
+Load an input and make its cache active:
+
+```bash
+nestql --cache customers.json
+```
+
+The command reports either `Loaded cache for <path>` or `Using existing cache for <path>`. Query the active cache without repeating the input filename or option:
+
+```bash
+nestql totals.nql --output json
+```
+
+Select another cache explicitly:
 
 ```bash
 nestql totals.nql customers.json --cache --output json
 ```
+
+That cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. When `--cache` is absent, JDBC settings win over the active-cache fallback. Supplying an input file without `--cache` retains its mapped-DML meaning.
 
 By default, cache files are stored under:
 
@@ -438,6 +460,14 @@ By default, cache files are stored under:
 ```
 
 Use `--cache-dir path` to choose another directory.
+
+The active selection is stored in:
+
+```text
+~/.nestql/config.properties
+```
+
+It records both the cache root and generated cache directory, so a cache loaded with a custom `--cache-dir` remains active without repeating that option.
 
 Cache reuse is automatic. Once a cache exists for an input path, nestQL reuses it until it is explicitly cleared. The cache is not synchronized with changes to the input file. An explicit Parquet `--parquet-record` name is part of the cache identity because it changes the generated table name; `--parquet-root` is not, because the hierarchy root is not materialized as a cache table. Clearing a Parquet input path clears all record-name variants for that source file.
 
@@ -574,7 +604,7 @@ List caches:
 nestql --list-caches
 ```
 
-The listing shows input type, cache creation time, and source path. Cache metadata is stored inside each H2 cache database.
+The listing shows input type, cache creation time, and source path. The active cache is marked with `*`. Cache metadata is stored inside each H2 cache database.
 
 Clear all caches:
 

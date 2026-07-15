@@ -6,8 +6,7 @@ import blater.nestql.inputreader.InputType;
 import blater.nestql.parser.script.NestScript;
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.Capture;
-import blater.nestql.runner.sql.cache.CacheHandle;
-import blater.nestql.runner.sql.cache.CacheSource;
+import blater.nestql.runner.sql.cache.CacheExecution;
 import blater.nestql.runner.sql.dml.*;
 import blater.nestql.runner.sql.dml.mapping.InputFileRowMapper;
 import blater.nestql.runner.sql.dml.mapping.MappingResult;
@@ -15,16 +14,12 @@ import blater.nestql.runner.sql.domain.DmlExecutionResult;
 import blater.nestql.runner.sql.domain.SqlRow;
 import blater.nestql.runner.sql.query.RunQuery;
 import blater.nestql.runner.sql.SqlExecutor;
-import blater.nestql.runner.sql.cache.HierarchyCacheLoader;
-import blater.nestql.runner.sql.cache.PersistentCache;
 import blater.nestql.util.Log;
 
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
-import static blater.nestql.ParameterParser.CACHE_MODE_PARAM;
 import static blater.nestql.ParameterParser.INPUT_FILENAME;
 import static blater.nestql.util.ValueUtil.has;
 
@@ -40,16 +35,9 @@ public final class ScriptRunner {
     if (script == null || script.statements().isEmpty())
       return null;
 
-    CacheHandle cacheHandle = cacheMode(params) ? cacheHandle(params) : null;
-    Map<String, String> sqlParams = cacheHandle != null ? cacheJdbcParams(params, cacheHandle.jdbcUrl()) : params;
-    SqlExecutor sqlExecutor = new SqlExecutor(sqlParams);
+    SqlExecutor sqlExecutor = CacheExecution.openForQuery(params)
+        .orElseGet(() -> new SqlExecutor(params));
     try {
-      if (cacheHandle != null && cacheHandle.needsLoad()) {
-        Hierarchy cacheInput = loadCacheInput(params.get(INPUT_FILENAME), params);
-        new HierarchyCacheLoader(sqlExecutor).load(cacheInput);
-        PersistentCache.markLoaded(cacheHandle);
-      }
-
       final InputFileRowMapper inputFileRowMapper = new InputFileRowMapper();
       Hierarchy inputHierarchy = null;
       Map<String, List<Map<String, Object>>> captureRowSets = new HashMap<>();
@@ -71,7 +59,7 @@ public final class ScriptRunner {
             if (inputDataIsFromFile(stmt)) {
               if (inputHierarchy == null)  {
                 String inputFilename = params.get(INPUT_FILENAME);
-                inputHierarchy = InputReader.of(inputTypeFor(inputFilename)).load(inputFilename, params);
+                inputHierarchy = InputReader.of(InputType.fromFilename(inputFilename)).load(inputFilename, params);
               }
               runDmlForInputFile(stmt, inputHierarchy, params, inputFileRowMapper, sqlExecutor);
 
@@ -105,62 +93,6 @@ public final class ScriptRunner {
 
   private static boolean inputDataIsFromFile(NestStatement stmt) {
     return stmt.getSourceRowsetName() == null;
-  }
-
-  private static boolean cacheMode(Map<String, String> params) {
-    return params != null && Boolean.parseBoolean(params.get(CACHE_MODE_PARAM));
-  }
-
-  private static CacheHandle cacheHandle(Map<String, String> params) {
-    String inputFilename = requireCacheInput(params);
-    InputType inputType = inputTypeFor(inputFilename);
-    return PersistentCache.prepare(
-        CacheSource.from(inputFilename, inputType, params),
-        params);
-  }
-
-  private static Map<String, String> cacheJdbcParams(Map<String, String> params, String jdbcUrl) {
-    Map<String, String> cacheParams = new HashMap<>(params);
-    cacheParams.put("jdbc.class.name", "org.h2.Driver");
-    cacheParams.put("jdbc.database", jdbcUrl);
-    cacheParams.put("jdbc.username", "sa");
-    cacheParams.put("jdbc.password", "");
-    return cacheParams;
-  }
-
-  private static String requireCacheInput(Map<String, String> params) {
-    String inputFilename = params.get(INPUT_FILENAME);
-    if (inputFilename == null || inputFilename.isBlank()) {
-      return Log.fatal(IllegalArgumentException.class, "--cache requires an input file.");
-    }
-    return inputFilename;
-  }
-
-  private static Hierarchy loadCacheInput(String inputFilename, Map<String, String> params) {
-    return InputReader.of(inputTypeFor(inputFilename)).load(inputFilename, params);
-  }
-
-  static InputType inputTypeFor(String filename) {
-    if (filename == null || filename.isBlank()) {
-      return InputType.XML;
-    }
-    String normalized = filename.toLowerCase(Locale.ROOT);
-    if (normalized.endsWith(".xml")) {
-      return InputType.XML;
-    }
-    if (normalized.endsWith(".json")) {
-      return InputType.JSON;
-    }
-    if (normalized.endsWith(".yaml") || normalized.endsWith(".yml")) {
-      return InputType.YAML;
-    }
-    if (normalized.endsWith(".csv")) {
-      return InputType.CSV;
-    }
-    if (normalized.endsWith(".parquet")) {
-      return InputType.PARQUET;
-    }
-    return Log.fatal(IllegalArgumentException.class, "Unsupported input file type: " + filename);
   }
 
   private static void runDmlForInputFile(NestStatement stmt, Hierarchy inputDataFile, Map<String, String> parameters, InputFileRowMapper inputFileRowMapper, SqlExecutor sqlExecutor) {

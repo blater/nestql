@@ -165,6 +165,16 @@ Query an input file through nestQL's local SQL cache, without an external databa
 nestql query.nql customers.json --cache --output json
 ```
 
+Load a cache once and make it active, then run repeated queries without repeating the input path or `--cache`:
+
+```bash
+nestql --cache customers.json
+nestql first-query.nql
+nestql second-query.nql
+```
+
+Select another cache explicitly with `nestql query.nql --cache other.json`. The selected cache becomes active.
+
 The general execution form is:
 
 ```text
@@ -180,8 +190,8 @@ recognised input file.
 
 | Argument | Description |
 |---|---|
-| `script-file-or-text` | A `.nql` script filename, or the script itself as one quoted command-line argument. Required except for cache-maintenance commands. |
-| `input-file` | Optional XML, JSON, YAML, CSV, or Parquet input. Required with `--cache`; otherwise available to mapped DML statements. |
+| `script-file-or-text` | A `.nql` script filename, or the script itself as one quoted command-line argument. Required except for standalone cache loading and cache-maintenance commands. |
+| `input-file` | Optional XML, JSON, YAML, CSV, or Parquet input. With standalone `--cache`, it is loaded and made active; otherwise it is available to cached queries or mapped DML statements. |
 | `name=value` | A runtime parameter used by `${name}` placeholders. Quote the complete argument when its value contains shell-sensitive characters or spaces. |
 
 Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`, `.csv`, or `.parquet`.
@@ -204,7 +214,7 @@ Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`,
 | `--jdbc-password PASSWORD` | Set the exact `jdbc.password` value. |
 | `--output TYPE`, `-o TYPE` | Select `xml`, `json`, `csv`, or `yaml` output. |
 | `--output=TYPE` | Equals-form of `--output TYPE`. |
-| `--cache` | Load or reuse the input file in a persistent local H2 database, then run the script against its generated tables. |
+| `--cache` | Load or select an input file's persistent local H2 cache. With no input, query the active cache. Explicit cache mode overrides JDBC settings. |
 | `--cache-dir PATH` | Store query caches under `PATH` instead of `~/.nestql/cache`. |
 | `--cache-dir=PATH` | Equals-form of `--cache-dir PATH`. |
 | `--list-caches` | List caches and their source files. This is a standalone maintenance command and does not take a script. |
@@ -229,6 +239,7 @@ either, output defaults to XML.
 Cache maintenance examples:
 
 ```bash
+nestql --cache customers.json
 nestql --list-caches
 nestql --clear-cache
 nestql --clear-cache customers.json
@@ -272,8 +283,8 @@ require `--port` because they have no single safe default.
 
 Supplied connection values are used as written. nestQL does not validate port
 ranges, encode URL components, or reconcile inconsistent credentials. Use the
-exact form for advanced vendor syntax. JDBC connection options cannot be
-combined with `--cache` or cache-maintenance commands.
+exact form for advanced vendor syntax. Explicit `--cache` takes precedence over
+JDBC connection options; cache maintenance commands ignore them.
 
 ### Properties File
 
@@ -374,4 +385,3 @@ YAML, CSV, and Parquet support should be present in every JVM and native build.
 
 The grammar lives in: `src/main/antlr4/blater/nestql/core/parser/NestQL.g4`
 It is processed by ANTLR4 during the Maven build (see `pom.xml`). The generated parser/lexer sources are in `target/generated-sources/antlr4/` and should not be edited directly.
-

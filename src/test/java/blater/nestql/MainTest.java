@@ -3,6 +3,7 @@ package blater.nestql;
 import blater.nestql.testsupport.ParquetTestFiles;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.schema.MessageType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,12 +20,19 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainTest {
   @TempDir
   Path tempDir;
+
+  @BeforeEach
+  void clearActiveCacheSelection() throws Exception {
+    Files.deleteIfExists(Path.of(
+        System.getProperty("user.home"), ".nestql", "config.properties"));
+  }
 
   @Test
   void sqlToXmlScriptDoesNotReadUnusedLoadFile() throws Exception {
@@ -206,6 +214,18 @@ class MainTest {
   }
 
   @Test
+  void cacheFlagWithOneInputFileIsAStandaloneCacheCommand() throws Exception {
+    Path input = write("standalone.json", "{}");
+
+    var params = ParameterParser.parse("--cache", input.toString());
+
+    assertEquals("true", params.get(ParameterParser.CACHE_MODE_PARAM));
+    assertEquals(input.toString(), params.get(ParameterParser.INPUT_FILENAME));
+    assertFalse(params.containsKey(ParameterParser.SCRIPT_FILE_PARAM));
+    assertFalse(params.containsKey(ParameterParser.SCRIPT_TEXT_PARAM));
+  }
+
+  @Test
   void cacheClearFlagsDoNotRequireScriptFile() {
     var all = ParameterParser.parse("--clear-cache", "--cache-dir", tempDir.resolve("cache").toString());
     var target = ParameterParser.parse("--clear-cache", "input.json", "--cache-dir", tempDir.resolve("cache").toString());
@@ -317,6 +337,121 @@ class MainTest {
 
     assertEquals("""
         {"result":{"customer":{"id":"C1","country":"GB"}}}
+        """, output);
+  }
+
+  @Test
+  void standaloneCacheLoadReportsReuseAndSuppliesTheActiveCache() throws Exception {
+    Path cacheDir = tempDir.resolve("active-cache");
+    Path input = write("active.json", """
+        {
+          "data": {
+            "customer": [
+              { "id": "C1", "country": "GB" }
+            ]
+          }
+        }
+        """);
+    Path script = write("active-query.nql", """
+        output json;
+        select c.id into {result.customer.id}
+        from customer c
+        where c.country = 'GB';
+        """);
+
+    String loaded = captureStdout(() -> Main.main(
+        "--cache-dir", cacheDir.toString(), "--cache", input.toString()));
+    String reused = captureStdout(() -> Main.main(
+        "--cache-dir", cacheDir.toString(), "--cache", input.toString()));
+    String queryOutput = captureStdout(() -> Main.main(script.toString()));
+
+    String source = input.toAbsolutePath().normalize().toString();
+    assertEquals("Loaded cache for " + source + System.lineSeparator(), loaded);
+    assertEquals("Using existing cache for " + source + System.lineSeparator(), reused);
+    assertEquals("""
+        {"result":{"customer":{"id":"C1"}}}
+        """, queryOutput);
+  }
+
+  @Test
+  void explicitCacheSelectionBecomesActiveForLaterQueries() throws Exception {
+    Path cacheDir = tempDir.resolve("selected-cache");
+    Path first = write("first-active.json", """
+        { "data": { "customer": [{ "id": "FIRST" }] } }
+        """);
+    Path second = write("second-active.json", """
+        { "data": { "customer": [{ "id": "SECOND" }] } }
+        """);
+    Path script = write("selected-query.nql", """
+        output json;
+        select c.id into {result.id} from customer c;
+        """);
+
+    Main.main("--cache-dir", cacheDir.toString(), "--cache", first.toString());
+    Main.main("--cache-dir", cacheDir.toString(), "--cache", second.toString());
+
+    String selected = captureStdout(() -> Main.main(
+        script.toString(), "--cache-dir", cacheDir.toString(), "--cache", first.toString()));
+    String active = captureStdout(() -> Main.main(script.toString()));
+
+    assertEquals("""
+        {"result":{"id":"FIRST"}}
+        """, selected);
+    assertEquals(selected, active);
+  }
+
+  @Test
+  void explicitCacheWinsOverJdbcSettingsAndKeepsRuntimeProperties() throws Exception {
+    Path cacheDir = tempDir.resolve("cache-wins");
+    Path input = write("cache-wins.json", """
+        { "data": { "customer": [{ "id": "C1", "country": "GB" }] } }
+        """);
+    Path script = write("cache-wins.nql", """
+        output json;
+        select c.id into {result.id}
+        from customer c
+        where c.country = '${region}';
+        """);
+    Path properties = write("external.properties", """
+        jdbc.driver=postgresql
+        jdbc.database=jdbc:postgresql://invalid/external
+        jdbc.username=external
+        jdbc.password=secret
+        region=GB
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), input.toString(), "--cache",
+        "--cache-dir", cacheDir.toString(), "-p", properties.toString()));
+
+    assertEquals("""
+        {"result":{"id":"C1"}}
+        """, output);
+  }
+
+  @Test
+  void jdbcSettingsWinOverTheActiveCacheWhenCacheIsNotExplicit() throws Exception {
+    Path cacheDir = tempDir.resolve("jdbc-wins");
+    Path input = write("jdbc-wins.json", """
+        { "data": { "customer": [{ "id": "CACHED" }] } }
+        """);
+    Main.main("--cache-dir", cacheDir.toString(), "--cache", input.toString());
+
+    String url = databaseUrl();
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection, "create table source (result_value varchar(20))");
+      execute(connection, "insert into source (result_value) values ('EXTERNAL')");
+    }
+    Path properties = propertiesFile(url);
+    Path script = write("jdbc-wins.nql", """
+        output json;
+        select result_value into {result.value} from source;
+        """);
+
+    String output = captureStdout(() -> Main.main(script.toString(), "-p", properties.toString()));
+
+    assertEquals("""
+        {"result":{"value":"EXTERNAL"}}
         """, output);
   }
 

@@ -148,12 +148,16 @@ public final class ParameterParser {
       }
     }
 
+    boolean cacheCommand = isCacheCommand(commandParameters);
     Map<String, String> parameters = new LinkedHashMap<>(propertyParameters);
-    applySimpleConnection(parameters, databaseType, databaseName, host, port);
+    if (!cacheCommand) {
+      applySimpleConnection(parameters, databaseType, databaseName, host, port);
+    }
     parameters.putAll(commandParameters);
-    applyDriverClassPrecedence(parameters, commandParameters);
-    normalizeJdbcDriver(parameters);
-    validateCacheConnectionConflict(parameters);
+    if (!cacheCommand) {
+      applyDriverClassPrecedence(parameters, commandParameters);
+      normalizeJdbcDriver(parameters);
+    }
     resolvePositionals(parameters, positionals);
     return parameters;
   }
@@ -239,26 +243,12 @@ public final class ParameterParser {
     }
   }
 
-  private static void validateCacheConnectionConflict(Map<String, String> parameters) {
-    boolean cacheCommand = Boolean.parseBoolean(parameters.get(CACHE_MODE_PARAM))
+  private static boolean isCacheCommand(Map<String, String> parameters) {
+    return Boolean.parseBoolean(parameters.get(CACHE_MODE_PARAM))
         || parameters.containsKey(CACHE_CLEAR_ALL_PARAM)
         || parameters.containsKey(CACHE_CLEAR_TARGET_PARAM)
         || parameters.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)
         || parameters.containsKey(CACHE_LIST_PARAM);
-    if (!cacheCommand) {
-      return;
-    }
-
-    boolean connectionConfigured = parameters.containsKey(JDBC_DRIVER_PARAM)
-        || parameters.containsKey(JDBC_CLASS_NAME_PARAM)
-        || parameters.containsKey(JDBC_DATABASE_PARAM)
-        || parameters.containsKey(JDBC_USERNAME_PARAM)
-        || parameters.containsKey(JDBC_PASSWORD_PARAM);
-    if (connectionConfigured) {
-      Log.fatal(
-          IllegalArgumentException.class,
-          "JDBC connection options cannot be used with cache mode or cache maintenance commands.");
-    }
   }
 
   private static void applySimpleConnection(
@@ -447,10 +437,17 @@ public final class ParameterParser {
     }
 
     switch (positionArguments.size()) {
-      case 0 -> Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
+      case 0 -> {
+        if (Boolean.parseBoolean(params.get(CACHE_MODE_PARAM))) {
+          Log.fatal(IllegalArgumentException.class, "--cache requires an input file or script.");
+        }
+        Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
+      }
       case 1 -> {
         String argument = positionArguments.getFirst();
-        if (!fileExists(argument)) {
+        if (Boolean.parseBoolean(params.get(CACHE_MODE_PARAM)) && isInputFile(argument)) {
+          params.put(INPUT_FILENAME, argument);
+        } else if (!fileExists(argument)) {
           params.put(SCRIPT_TEXT_PARAM, argument);
         } else if (isInputFile(argument)) {
           Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
