@@ -15,7 +15,7 @@ import java.util.Set;
  * flattening nested values into dotted columns and repeated objects into rows.
  */
 public final class MarkdownOutputWriter implements OutputWriter {
-  private static final int COLUMN_WIDTH = 35;
+  private static final int COLUMN_WIDTH = 25;
 
   @Override
   public void write(Hierarchy result) {

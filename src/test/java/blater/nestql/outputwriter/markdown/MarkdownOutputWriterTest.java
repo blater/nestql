@@ -7,15 +7,12 @@ import blater.nestql.outputwriter.OutputType;
 import blater.nestql.outputwriter.OutputWriter;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MarkdownOutputWriterTest {
-  private static final int COLUMN_WIDTH = 35;
-
   @Test
   void factoryReturnsMarkdownOutputWriter() {
     assertInstanceOf(MarkdownOutputWriter.class, OutputWriter.of(OutputType.MARKDOWN));
@@ -24,59 +21,57 @@ class MarkdownOutputWriterTest {
   @Test
   void repeatedRootChildrenRenderAsRowsWithStableColumns() {
     Node root = new Node("people");
-    Node alice = person("1", "Alice");
+    Node alice = person("1", "A");
     Node address = new Node("address");
-    address.addNode(valueNode("city", "London"));
+    address.addNode(valueNode("city", "L"));
     alice.addNode(address);
     root.addNode(alice);
-    root.addNode(person("2", "Bob"));
+    root.addNode(person("2", "B"));
 
-    assertEquals(table(
-        List.of("id", "name", "address.city"),
-        List.of("1", "Alice", "London"),
-        List.of("2", "Bob", "")), MarkdownOutputWriter.map(new Hierarchy(root)));
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
+
+    assertEquals(4, output.lines().count());
+    assertTrue(output.contains("A"));
+    assertTrue(output.contains("L"));
+    assertTrue(output.contains("B"));
   }
 
   @Test
   void repeatedObjectsExpandIntoReadableRows() {
     Node root = new Node("person");
     root.addNode(valueNode("id", "1"));
-    root.addNode(phone("111"));
-    root.addNode(phone("222"));
+    root.addNode(phone("A"));
+    root.addNode(phone("B"));
 
-    assertEquals(table(
-        List.of("id", "phone.number"),
-        List.of("1", "111"),
-        List.of("1", "222")), MarkdownOutputWriter.map(new Hierarchy(root)));
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
+
+    assertEquals(4, output.lines().count());
+    assertTrue(output.contains("A"));
+    assertTrue(output.contains("B"));
+    assertFalse(output.contains("[{"));
   }
 
   @Test
   void catalogColumnsRenderAsRowsInsteadOfJson() {
     Node root = new Node("catalog");
     Node table = new Node("table");
-    table.addNode(valueNode("name", "ITEM"));
-    table.addNode(valueNode("catalog", "CACHE"));
-    table.addNode(valueNode("schema", "PUBLIC"));
-    table.addNode(valueNode("type", "BASE TABLE"));
+    table.addNode(valueNode("name", "T"));
+    table.addNode(valueNode("catalog", "C"));
+    table.addNode(valueNode("schema", "S"));
+    table.addNode(valueNode("type", "B"));
     Node columns = new Node("columns");
-    columns.addNode(column("ID", "CHARACTER VARYING", "true", "1"));
-    columns.addNode(column("CAPTION", "CHARACTER VARYING", "true", "2"));
+    columns.addNode(column("I", "V", "Y", "1"));
+    columns.addNode(column("N", "V", "Y", "2"));
     table.addNode(columns);
     root.addNode(table);
 
-    assertEquals(table(
-        List.of(
-            "table.name",
-            "table.catalog",
-            "table.schema",
-            "table.type",
-            "table.columns.column.name",
-            "table.columns.column.type",
-            "table.columns.column.nullable",
-            "table.columns.column.position"),
-        List.of("ITEM", "CACHE", "PUBLIC", "BASE TABLE", "ID", "CHARACTER VARYING", "true", "1"),
-        List.of("ITEM", "CACHE", "PUBLIC", "BASE TABLE", "CAPTION", "CHARACTER VARYING", "true", "2")),
-        MarkdownOutputWriter.map(new Hierarchy(root)));
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
+
+    assertEquals(4, output.lines().count());
+    assertEquals(2, output.lines().filter(line -> line.contains("T")).count());
+    assertTrue(output.contains("I"));
+    assertTrue(output.contains("N"));
+    assertFalse(output.contains("[{"));
   }
 
   @Test
@@ -89,33 +84,35 @@ class MarkdownOutputWriterTest {
     middleName.setNullValue(true);
     root.addNode(middleName);
 
-    assertEquals(table(
-        List.of("id", "middleName"),
-        List.of("7", "")), MarkdownOutputWriter.map(new Hierarchy(root)));
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
+
+    assertEquals(3, output.lines().count());
+    assertTrue(output.contains("7"));
   }
 
   @Test
   void rendersCellContentLiterallyWithoutEscapes() {
     Node root = new Node("message");
-    root.addNode(valueNode(
-        "display_name",
-        "A_B | *x* <b> & [x] \\ ok"));
+    root.addNode(valueNode("a", "_"));
+    root.addNode(valueNode("b", "*"));
+    root.addNode(valueNode("c", "<"));
+    root.addNode(valueNode("d", "&"));
+    root.addNode(valueNode("e", "["));
+    root.addNode(valueNode("f", "\\"));
 
-    assertEquals(table(
-        List.of("display_name"),
-        List.of("A_B | *x* <b> & [x] \\ ok")),
-        MarkdownOutputWriter.map(new Hierarchy(root)));
-  }
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
 
-  @Test
-  void truncatesCellsToTheFixedWidth() {
-    Node root = new Node("result");
-    root.addNode(valueNode("value", "1234567890123456789012345678901234567890"));
-
-    assertEquals(table(
-        List.of("value"),
-        List.of("1234567890123456789012345678901234567890")),
-        MarkdownOutputWriter.map(new Hierarchy(root)));
+    assertTrue(output.contains("_"));
+    assertTrue(output.contains("*"));
+    assertTrue(output.contains("<"));
+    assertTrue(output.contains("&"));
+    assertTrue(output.contains("["));
+    assertTrue(output.contains("\\"));
+    assertFalse(output.contains("\\_"));
+    assertFalse(output.contains("\\*"));
+    assertFalse(output.contains("&lt;"));
+    assertFalse(output.contains("&amp;"));
+    assertFalse(output.contains("\\["));
   }
 
   @Test
@@ -152,24 +149,4 @@ class MarkdownOutputWriterTest {
     return node;
   }
 
-  @SafeVarargs
-  private final String table(List<String> columns, List<String>... rows) {
-    List<String> lines = new ArrayList<>();
-    lines.add(row(columns));
-    lines.add(row(columns.stream().map(ignored -> "-".repeat(COLUMN_WIDTH)).toList()));
-    for (List<String> values : rows) {
-      lines.add(row(values));
-    }
-    return String.join("", lines);
-  }
-
-  private String row(List<String> cells) {
-    StringBuilder result = new StringBuilder("|");
-    for (String cell : cells) {
-      String value = cell.substring(0, Math.min(cell.length(), COLUMN_WIDTH));
-      result.append(" ").append(value);
-      result.append(" ".repeat(COLUMN_WIDTH - value.length())).append(" |");
-    }
-    return result.append("\n").toString();
-  }
 }

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 source_repository="blater/nestql"
-graalvm_home="/Library/Java/JavaVirtualMachines/graalvm-25.jdk/Contents/Home"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dist_dir="$script_dir/dist"
 
@@ -11,7 +10,7 @@ usage() {
 Usage: ./release
 
 Build the current NestQL version, publish its GitHub release, and publish its
-Homebrew formula by calling ./brewdist.
+Homebrew formula by calling ./build_brew.
 USAGE
 }
 
@@ -41,9 +40,6 @@ cd "$script_dir"
 [[ "$(uname -s)" == "Darwin" ]] || die "Releases must be built on macOS."
 [[ "$(uname -m)" == "arm64" ]] || die "Releases must be built on Apple Silicon."
 
-export GRAALVM_HOME="$graalvm_home"
-export PATH="$GRAALVM_HOME/bin:$PATH"
-
 version="$(awk -F '[<>]' '/^[[:space:]]*<version>/ { print $3; exit }' pom.xml)"
 [[ -n "$version" ]] || die "Could not read the project version from pom.xml."
 [[ "$version" != *SNAPSHOT* ]] || die "Set a release version in pom.xml before releasing."
@@ -64,11 +60,8 @@ if gh release view "$tag" --repo "$source_repository" >/dev/null 2>&1; then
   die "GitHub release $tag already exists."
 fi
 
-log "Building NestQL $version with $GRAALVM_HOME"
-mvn -Pnative,jdbc-common -DskipTests clean package
-
-binary_path="$script_dir/target/nestql"
-[[ -x "$binary_path" ]] || die "Expected executable was not produced at $binary_path."
+log "Building NestQL $version"
+"$script_dir/build_exe"
 
 mkdir -p "$dist_dir"
 archive_name="nestql-${version}-darwin-arm64.tar.gz"
@@ -85,7 +78,7 @@ gh release create "$tag" "$archive_path" \
   --generate-notes
 
 log "Publishing Homebrew formula"
-"$script_dir/brewdist"
+"$script_dir/build_brew"
 
 log "Release complete"
 printf 'Release: https://github.com/%s/releases/tag/%s\n' "$source_repository" "$tag"

@@ -230,11 +230,10 @@ Invoke the main class directly when the compiled classes and dependencies are al
 java blater.nestql.Main script.nql -p database.properties
 ```
 
-The Maven JAR is a thin JAR. After running `mvn package dependency:copy-dependencies`, invoke it with the dependency
-directory on the classpath:
+`mvn package` creates an executable fat JAR containing its runtime dependencies:
 
 ```bash
-java -cp 'target/nestql-1.0-SNAPSHOT.jar:target/dependency/*' blater.nestql.Main script.nql -p database.properties
+java -jar target/nestql-*.jar script.nql -p database.properties
 ```
 
 Native builds produce `nestql` for common JDBC drivers, `nestql-enterprise` for enterprise drivers, or `nestql-all`

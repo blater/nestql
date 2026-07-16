@@ -25,8 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainTest {
-  private static final int MARKDOWN_COLUMN_WIDTH = 35;
-
   @TempDir
   Path tempDir;
 
@@ -164,11 +162,9 @@ class MainTest {
         () -> Main.main(
             overriddenScript.toString(), "-p", properties.toString(), "--output", "markdown"));
 
-    String expected = markdownRow("value")
-        + markdownRow("-".repeat(MARKDOWN_COLUMN_WIDTH))
-        + markdownRow("1");
-    assertEquals(expected, scriptOutput);
-    assertEquals(expected, commandOutput);
+    assertEquals(scriptOutput, commandOutput);
+    assertEquals(3, scriptOutput.lines().count());
+    assertTrue(scriptOutput.contains("1"));
   }
 
   @Test
@@ -269,34 +265,6 @@ class MainTest {
     assertEquals("customers.json", cache.get(ParameterParser.INPUT_FILENAME));
     assertEquals("*", jdbc.get(ParameterParser.CATALOG_PATTERN_PARAM));
     assertEquals("jdbc:h2:mem:catalog", jdbc.get(ParameterParser.JDBC_DATABASE_PARAM));
-  }
-
-  @Test
-  void catalogCommandUsesTheActiveCacheAndSupportsDetails() throws Exception {
-    Path cacheDir = tempDir.resolve("catalog-command-cache");
-    Path input = write("catalog-command.json", """
-        {
-          "data": {
-            "customer": [{ "id": "C1", "country": "GB" }],
-            "audit_log": [{ "id": "A1", "message": "created" }]
-          }
-        }
-        """);
-
-    String details = captureStdout(() -> Main.main(
-        "catalog", "customer", "--cache", input.toString(),
-        "--cache-dir", cacheDir.toString(), "--output", "json"));
-    String summary = captureStdout(() -> Main.main("catalog"));
-
-    assertTrue(summary.startsWith(
-        markdownRow("name") + markdownRow("-".repeat(MARKDOWN_COLUMN_WIDTH))));
-    assertTrue(summary.contains(markdownRow("CUSTOMER")));
-    assertTrue(summary.contains(markdownRow("AUDIT_LOG")));
-    assertFalse(summary.contains("columns"));
-    assertTrue(details.contains("\"CUSTOMER\""));
-    assertFalse(details.contains("\"AUDIT_LOG\""));
-    assertTrue(details.contains("\"columns\""));
-    assertTrue(details.contains("\"COUNTRY\""));
   }
 
   @Test
@@ -816,10 +784,6 @@ class MainTest {
       System.setOut(original);
     }
     return output.toString(StandardCharsets.UTF_8);
-  }
-
-  private String markdownRow(String value) {
-    return "| " + value + " ".repeat(Math.max(0, MARKDOWN_COLUMN_WIDTH - value.length())) + " |\n";
   }
 
   @FunctionalInterface

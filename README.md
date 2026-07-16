@@ -130,11 +130,10 @@ already on `CLASSPATH`:
 java blater.nestql.Main report.nql -p database.properties
 ```
 
-The Maven JAR is a thin JAR, so its dependencies must remain on the classpath. After running
-`mvn package dependency:copy-dependencies`, invoke it with:
+`mvn package` creates an executable fat JAR containing its runtime dependencies:
 
 ```bash
-java -cp 'target/nestql-1.0-SNAPSHOT.jar:target/dependency/*' blater.nestql.Main report.nql -p database.properties
+java -jar target/nestql-*.jar report.nql -p database.properties
 ```
 
 Native builds produce one of three executables, according to the selected JDBC driver profile:

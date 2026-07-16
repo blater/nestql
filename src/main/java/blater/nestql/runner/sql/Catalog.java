@@ -18,25 +18,9 @@ import java.util.regex.Pattern;
 public final class Catalog {
   private static final Set<String> USER_TABLE_TYPES = Set.of("TABLE", "BASE TABLE");
   private static final Set<String> SYSTEM_NAMES = Set.of(
-      "CTXSYS",
-      "DBSNMP",
-      "INFORMATION_SCHEMA",
-      "MDSYS",
-      "MYSQL",
-      "OUTLN",
-      "PERFORMANCE_SCHEMA",
-      "PG_CATALOG",
-      "PG_TOAST",
-      "SYS",
-      "SYSCAT",
-      "SYSFUN",
-      "SYSIBM",
-      "SYSIBMADM",
-      "SYSPROC",
-      "SYSSTAT",
-      "SYSTEM",
-      "SYSTEM_LOBS",
-      "XDB");
+      "CTXSYS", "DBSNMP", "INFORMATION_SCHEMA", "MDSYS", "MYSQL", "OUTLN", "PERFORMANCE_SCHEMA", "PG_CATALOG",
+      "PG_TOAST", "SYS", "SYSCAT", "SYSFUN", "SYSIBM", "SYSIBMADM", "SYSPROC", "SYSSTAT", "SYSTEM",
+      "SYSTEM_LOBS", "XDB");
 
   private Catalog() { }
 
@@ -49,10 +33,10 @@ public final class Catalog {
           addUserTable(root, metadata, tables, tablePattern);
         }
       }
-      return new Hierarchy(root);
     } catch (SQLException ex) {
       return Log.fatal(IllegalStateException.class, "Could not read database catalog.", ex);
     }
+    return new Hierarchy(root);
   }
 
   private static void addUserTable(
@@ -95,9 +79,9 @@ public final class Catalog {
 
     Node tableNode = new Node("table");
     addValue(tableNode, "name", tableName);
-    addOptionalValue(tableNode, "catalog", catalog);
-    addOptionalValue(tableNode, "schema", schema);
-    addValue(tableNode, "type", tableType);
+    //addOptionalValue(tableNode, "catalog", catalog);
+    //addOptionalValue(tableNode, "schema", schema);
+    //addValue(tableNode, "type", tableType);
 
     Node columnsNode = new Node("columns");
     tableNode.addNode(columnsNode);
@@ -119,7 +103,7 @@ public final class Catalog {
     addValue(columnNode, "name", columns.getString("COLUMN_NAME"));
     addValue(columnNode, "type", columns.getString("TYPE_NAME"));
     addValue(columnNode, "nullable", Boolean.toString(columns.getInt("NULLABLE") == DatabaseMetaData.columnNullable));
-    addValue(columnNode, "position", columns.getString("ORDINAL_POSITION"));
+    //addValue(columnNode, "position", columns.getString("ORDINAL_POSITION"));
     return columnNode;
   }
 
