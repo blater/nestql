@@ -658,7 +658,7 @@ Output format is selected in this order:
 4. JSON otherwise.
 
 Accepted output types are `xml`, `json`, `csv`, `yaml`, and `markdown`, case-insensitively. Markdown output renders
-the result as one table, using dotted columns for nested scalar values and compact JSON cells for repeated objects.
+the result as one space-padded table, using dotted columns for nested scalar values and rows for repeated objects.
 
 Examples:
 
@@ -1445,16 +1445,16 @@ CSV is a flat format, so hierarchy is flattened:
 
 Writer: `MarkdownOutputWriter`.
 
-Markdown uses the same tabular projection as CSV and renders one table:
+Markdown renders one fixed-width, human-readable table:
 
 - If the root contains only one repeated child group, those children become table rows.
 - Otherwise, the root itself is written as one row.
 - Nested scalar nodes become dotted column names.
-- Repeated scalar nodes use line breaks within one cell.
-- Repeated nested object nodes serialize as compact JSON in one cell.
+- Repeated nodes expand into rows, with parent values repeated on each row.
 - Attributes become ordinary columns.
 - Null nodes become empty cells.
-- Cell content is escaped so data cannot add columns or inject Markdown or HTML formatting.
+- Every column is 35 characters wide; longer content is truncated and shorter content is space-padded.
+- Cell content is written literally without Markdown or HTML escaping.
 
 ## Known Limitations
 

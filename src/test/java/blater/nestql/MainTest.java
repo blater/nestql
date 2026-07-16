@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainTest {
+  private static final int MARKDOWN_COLUMN_WIDTH = 35;
+
   @TempDir
   Path tempDir;
 
@@ -162,11 +164,9 @@ class MainTest {
         () -> Main.main(
             overriddenScript.toString(), "-p", properties.toString(), "--output", "markdown"));
 
-    String expected = """
-        | value |
-        | --- |
-        | 1 |
-        """;
+    String expected = markdownRow("value")
+        + markdownRow("-".repeat(MARKDOWN_COLUMN_WIDTH))
+        + markdownRow("1");
     assertEquals(expected, scriptOutput);
     assertEquals(expected, commandOutput);
   }
@@ -288,9 +288,10 @@ class MainTest {
         "--cache-dir", cacheDir.toString(), "--output", "json"));
     String summary = captureStdout(() -> Main.main("catalog"));
 
-    assertTrue(summary.startsWith("| name |\n| --- |\n"));
-    assertTrue(summary.contains("| CUSTOMER |"));
-    assertTrue(summary.contains("| AUDIT\\_LOG |"));
+    assertTrue(summary.startsWith(
+        markdownRow("name") + markdownRow("-".repeat(MARKDOWN_COLUMN_WIDTH))));
+    assertTrue(summary.contains(markdownRow("CUSTOMER")));
+    assertTrue(summary.contains(markdownRow("AUDIT_LOG")));
     assertFalse(summary.contains("columns"));
     assertTrue(details.contains("\"CUSTOMER\""));
     assertFalse(details.contains("\"AUDIT_LOG\""));
@@ -727,10 +728,10 @@ class MainTest {
   }
 
   @Test
-  void cacheModeRequiresInputFile() throws Exception {
+  void cacheModeWithoutInputRequiresAnActiveCache() throws Exception {
     Path script = write("query.nql", "select 1 into {result.value};");
 
-    assertThrows(IllegalArgumentException.class,
+    assertThrows(IllegalStateException.class,
         () -> Main.main(script.toString(), "--cache", "--cache-dir", tempDir.resolve("cache-missing").toString()));
   }
 
@@ -815,6 +816,10 @@ class MainTest {
       System.setOut(original);
     }
     return output.toString(StandardCharsets.UTF_8);
+  }
+
+  private String markdownRow(String value) {
+    return "| " + value + " ".repeat(Math.max(0, MARKDOWN_COLUMN_WIDTH - value.length())) + " |\n";
   }
 
   @FunctionalInterface

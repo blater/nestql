@@ -275,26 +275,25 @@ class ParameterParserConnectionTest {
   }
 
   @Test
-  void rejectsConnectionConfigurationWithCacheCommands() throws Exception {
+  void cacheCommandsTakePrecedenceOverConnectionConfiguration() throws Exception {
     Path script = script();
     Path properties = properties("database.properties", "jdbc.username=cache_user\n");
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> ParameterParser.parse(
-            script.toString(),
-            "--cache",
-            "--db", "h2",
-            "--database", "mem:demo"));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> ParameterParser.parse(
-            script.toString(),
-            "--cache",
-            "-p", properties.toString()));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> ParameterParser.parse("--list-caches", "--jdbc-username=cache_user"));
+    Map<String, String> simple = ParameterParser.parse(
+        script.toString(),
+        "--cache",
+        "--db", "h2",
+        "--database", "mem:demo");
+    Map<String, String> property = ParameterParser.parse(
+        script.toString(),
+        "--cache",
+        "-p", properties.toString());
+    Map<String, String> list = ParameterParser.parse(
+        "--list-caches", "--jdbc-username=cache_user");
+
+    assertFalse(simple.containsKey(JDBC_DATABASE_PARAM));
+    assertEquals("cache_user", property.get(JDBC_USERNAME_PARAM));
+    assertEquals("cache_user", list.get(JDBC_USERNAME_PARAM));
   }
 
   private Path script() throws Exception {

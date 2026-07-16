@@ -10,7 +10,7 @@ import java.sql.SQLException;
  * Responsibility: Provides the project logging facade over SLF4J.
  */
 public class Log {
-  private static boolean isDebug = false;
+  private static boolean isDebug = Boolean.getBoolean("nestql.debug");
   public static void debug(boolean val) {
     Log.isDebug = val;
   }
