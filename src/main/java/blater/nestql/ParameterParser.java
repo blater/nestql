@@ -164,6 +164,9 @@ public final class ParameterParser {
   }
 
   private static String helpTopic(String[] args) {
+    if (args.length == 0) {
+      return BRIEF_HELP;
+    }
     for (int index = 0; index < args.length; index++) {
       String argument = args[index];
       if ("-h".equals(argument)) {

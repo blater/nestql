@@ -11,6 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HelpTest {
   @Test
+  void noArgumentsPrintsShortHelp() throws Exception {
+    assertFalse(captureStdout(Main::main).isBlank());
+  }
+
+  @Test
   void shortHelpIsBriefAndLongHelpPrintsTheManPage() throws Exception {
     String shortHelp = captureStdout(() -> Main.main("-h"));
     String longHelp = captureStdout(() -> Main.main("--help"));
