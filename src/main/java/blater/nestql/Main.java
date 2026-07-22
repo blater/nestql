@@ -1,7 +1,7 @@
 package blater.nestql;
 
 import blater.nestql.outputwriter.OutputType;
-import blater.nestql.inference.KeyInference;
+import blater.nestql.runner.inference.KeyInference;
 import blater.nestql.parser.ScriptLoader;
 import blater.nestql.parser.ScriptParser;
 import blater.nestql.parser.script.NestScript;

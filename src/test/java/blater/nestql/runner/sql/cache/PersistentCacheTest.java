@@ -2,7 +2,7 @@ package blater.nestql.runner.sql.cache;
 
 import blater.nestql.ParameterParser;
 import blater.nestql.inputreader.InputType;
-import blater.nestql.inference.KeyInference;
+import blater.nestql.runner.inference.KeyInference;
 import blater.nestql.runner.sql.SqlExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static blater.nestql.core.query.correlation.TestCurrentQueryRows.row;
-import static blater.nestql.core.query.correlation.TestCurrentQueryRows.values;
+import static blater.nestql.runner.correlation.TestCurrentQueryRows.row;
+import static blater.nestql.runner.correlation.TestCurrentQueryRows.values;
 import static blater.nestql.testsupport.XmlTestHelpers.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

@@ -1,7 +1,7 @@
 package blater.nestql.runner.sql.query;
 
 import blater.nestql.domain.Hierarchy;
-import blater.nestql.inference.KeyInference;
+import blater.nestql.runner.inference.KeyInference;
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.SqlExecutor;
 import blater.nestql.runner.sql.SqlRowCursor;
