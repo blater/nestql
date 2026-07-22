@@ -4,9 +4,6 @@ import blater.nestql.ParameterParser;
 import blater.nestql.inputreader.InputType;
 import blater.nestql.util.Log;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -44,10 +41,6 @@ public record CacheSource(
     return path.toAbsolutePath().normalize();
   }
 
-  String directoryName() {
-    return sha256(identityText());
-  }
-
   boolean matches(Metadata metadata) {
     return metadata != null
         && sourcePath.equals(metadata.sourcePath())
@@ -61,17 +54,4 @@ public record CacheSource(
         + "variant=" + variant + '\n';
   }
 
-  private static String sha256(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      StringBuilder hex = new StringBuilder(bytes.length * 2);
-      for (byte b : bytes) {
-        hex.append(String.format("%02x", b));
-      }
-      return hex.toString();
-    } catch (NoSuchAlgorithmException ex) {
-      return Log.fatal(IllegalStateException.class, "SHA-256 is not available", ex);
-    }
-  }
 }

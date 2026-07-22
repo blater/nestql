@@ -39,7 +39,7 @@ class PersistentCacheTest {
     CacheHandle second = PersistentCache.prepare(source(input), params);
 
     assertFalse(second.needsLoad());
-    assertEquals(first.cacheDir(), second.cacheDir());
+    assertEquals(first.cacheFile(), second.cacheFile());
   }
 
   @Test
@@ -54,7 +54,7 @@ class PersistentCacheTest {
     CacheHandle second = PersistentCache.prepare(source(input), params);
 
     assertFalse(second.needsLoad());
-    assertEquals(first.cacheDir(), second.cacheDir());
+    assertEquals(first.cacheFile(), second.cacheFile());
   }
 
   @Test
@@ -69,7 +69,7 @@ class PersistentCacheTest {
     CacheHandle second = PersistentCache.prepare(source(input), params);
 
     assertFalse(second.needsLoad());
-    assertEquals(first.cacheDir(), second.cacheDir());
+    assertEquals(first.cacheFile(), second.cacheFile());
   }
 
   @Test
@@ -83,8 +83,8 @@ class PersistentCacheTest {
     int cleared = PersistentCache.clearForInput(firstInput.toString(), params);
 
     assertEquals(1, cleared);
-    assertFalse(Files.exists(first.cacheDir()));
-    assertTrue(Files.exists(second.cacheDir()));
+    assertFalse(Files.exists(first.cacheFile()));
+    assertTrue(Files.exists(second.cacheFile()));
   }
 
   @Test
@@ -94,9 +94,9 @@ class PersistentCacheTest {
     CacheHandle customer = preparedCache(parquetSource(input, "customer"), params);
     CacheHandle account = preparedCache(parquetSource(input, "account"), params);
 
-    assertTrue(Files.exists(customer.cacheDir()));
-    assertTrue(Files.exists(account.cacheDir()));
-    assertFalse(customer.cacheDir().equals(account.cacheDir()));
+    assertTrue(Files.exists(customer.cacheFile()));
+    assertTrue(Files.exists(account.cacheFile()));
+    assertFalse(customer.cacheFile().equals(account.cacheFile()));
   }
 
   @Test
@@ -113,7 +113,7 @@ class PersistentCacheTest {
         Map.of(ParameterParser.PARQUET_ROOT_PARAM, "accounts")), params);
 
     assertFalse(second.needsLoad());
-    assertEquals(first.cacheDir(), second.cacheDir());
+    assertEquals(first.cacheFile(), second.cacheFile());
   }
 
   @Test
@@ -126,7 +126,8 @@ class PersistentCacheTest {
         InputType.PARQUET,
         Map.of(ParameterParser.PARQUET_RECORD_PARAM, ""));
 
-    assertFalse(inferred.directoryName().equals(emptyOverride.directoryName()));
+    assertFalse(PersistentCache.cacheFile(inferred.identityText(), Map.of())
+        .equals(PersistentCache.cacheFile(emptyOverride.identityText(), Map.of())));
   }
 
   @Test
@@ -141,9 +142,9 @@ class PersistentCacheTest {
     int cleared = PersistentCache.clearForInput(input.toString(), params);
 
     assertEquals(2, cleared);
-    assertFalse(Files.exists(customer.cacheDir()));
-    assertFalse(Files.exists(account.cacheDir()));
-    assertTrue(Files.exists(other.cacheDir()));
+    assertFalse(Files.exists(customer.cacheFile()));
+    assertFalse(Files.exists(account.cacheFile()));
+    assertTrue(Files.exists(other.cacheFile()));
   }
 
   @Test
@@ -155,19 +156,19 @@ class PersistentCacheTest {
     int cleared = PersistentCache.clearAll(params);
 
     assertEquals(2, cleared);
-    assertEquals(0, cacheDirectoryCount(params));
+    assertEquals(0, cacheFileCount(params));
   }
 
   @Test
   void clearEntryPointClearsExistingCache() throws Exception {
     Map<String, String> params = cacheParams(ParameterParser.CACHE_CLEAR_ALL_PARAM, "true");
     CacheHandle handle = preparedCache(write("cached.json", "{\"name\":\"Fred\"}"), params);
-    assertTrue(Files.exists(handle.cacheDir()));
+    assertTrue(Files.exists(handle.cacheFile()));
 
     int cleared = PersistentCache.clear(params);
 
     assertEquals(1, cleared);
-    assertFalse(Files.exists(handle.cacheDir()));
+    assertFalse(Files.exists(handle.cacheFile()));
   }
 
   @Test
@@ -197,7 +198,7 @@ class PersistentCacheTest {
     PersistentCache.list(params);
 
     CacheHandle reused = PersistentCache.prepare(source(input), params);
-    assertEquals(handle.cacheDir(), reused.cacheDir());
+    assertEquals(handle.cacheFile(), reused.cacheFile());
     assertFalse(reused.needsLoad());
   }
 
@@ -211,8 +212,8 @@ class PersistentCacheTest {
     int cleared = PersistentCache.clearOlderThan(Duration.ofDays(1), params);
 
     assertEquals(1, cleared);
-    assertFalse(Files.exists(oldCache.cacheDir()));
-    assertTrue(Files.exists(recentCache.cacheDir()));
+    assertFalse(Files.exists(oldCache.cacheFile()));
+    assertTrue(Files.exists(recentCache.cacheFile()));
   }
 
   @Test
@@ -226,7 +227,7 @@ class PersistentCacheTest {
 
     PersistentCache.activate(handle);
 
-    assertEquals(handle.cacheDir(), PersistentCache.active().orElseThrow().cacheDir());
+    assertEquals(handle.cacheFile(), PersistentCache.active().orElseThrow().cacheFile());
     assertTrue(PersistentCache.listCaches(params).getFirst().active());
     assertTrue(Files.readString(configFile).contains("unrelated=value"));
 
@@ -246,27 +247,28 @@ class PersistentCacheTest {
   @Test
   void storesDatabaseStructureArtifactsThroughTheExistingCacheLifecycle() {
     Map<String, String> params = cacheParams();
+    String identity = "url=jdbc:test\n";
+    Path cacheFile = PersistentCache.cacheFile(identity, params);
     byte[] payload = {1, 2, 3, 4};
 
     PersistentCache.writeArtifact(
-        "database-test",
-        "url=jdbc:test\n",
+        cacheFile,
+        identity,
         "Test database",
         1,
         24,
-        payload,
-        params);
+        payload);
 
     CachedArtifact cached = PersistentCache.readArtifact(
-        "database-test", "url=jdbc:test\n", params).orElseThrow();
+        cacheFile, identity).orElseThrow();
     assertEquals(1, cached.version());
     assertEquals(24, cached.expiryHours());
     assertTrue(java.util.Arrays.equals(payload, cached.payload()));
     assertEquals("DATABASE_STRUCTURE", PersistentCache.listCaches(params).getFirst().inputType());
 
-    PersistentCache.setArtifactExpiry("database-test", "url=jdbc:test\n", 0, params);
+    PersistentCache.setArtifactExpiry(cacheFile, identity, 0);
     assertEquals(0, PersistentCache.readArtifact(
-        "database-test", "url=jdbc:test\n", params).orElseThrow().expiryHours());
+        cacheFile, identity).orElseThrow().expiryHours());
     assertEquals(1, PersistentCache.clearAll(params));
   }
 
@@ -285,14 +287,14 @@ class PersistentCacheTest {
         ParameterParser.JDBC_PASSWORD_PARAM, "",
         ParameterParser.CACHE_DIR_PARAM, PersistentCache.cacheRoot(params).toString());
 
-    SqlExecutor executor = new SqlExecutor(jdbc);
+    SqlExecutor executor = new SqlExecutor(jdbc, handle.cacheFile(), handle.source().identityText());
     try {
       KeyInference.refresh(executor, jdbc);
     } finally {
       executor.close();
     }
 
-    assertEquals(1, cacheDirectoryCount(params));
+    assertEquals(1, cacheFileCount(params));
     try (var connection = DriverManager.getConnection(handle.jdbcUrl(), "sa", "");
          var result = connection.createStatement().executeQuery(
              "select count(*) from nestql_internal.cache_artifact")) {
@@ -319,9 +321,9 @@ class PersistentCacheTest {
     }
   }
 
-  private int cacheDirectoryCount(Map<String, String> params) throws Exception {
+  private int cacheFileCount(Map<String, String> params) throws Exception {
     try (var paths = Files.list(PersistentCache.cacheRoot(params))) {
-      return (int) paths.filter(Files::isDirectory).count();
+      return (int) paths.filter(path -> path.getFileName().toString().endsWith(".mv.db")).count();
     }
   }
 

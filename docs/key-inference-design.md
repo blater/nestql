@@ -18,7 +18,7 @@ This is deliberately path-scoped. A key can span several aliases, and one table 
 
 The graph records visible non-system tables and views, their columns and types, primary keys, composite primary keys, unique indexes, foreign keys, conventional ID/key columns, type-compatible naming relationships, and logical composite keys for association tables. Candidate precedence is primary key, unique index, conventional key, then logical association key.
 
-The implementation is cohesive under `blater.nestql.inference`:
+The implementation is cohesive under `blater.nestql.runner.inference`:
 
 | Class | Responsibility |
 |---|---|
@@ -29,7 +29,7 @@ The implementation is cohesive under `blater.nestql.inference`:
 | `KeyInferencePlanner` | Query/path binding and hidden-key selection |
 | `CompiledSelect` | Executable SQL and effective mapping plan |
 
-`PersistentCache` remains the single persistent-cache implementation. Database graphs are versioned artifacts under the same cache root and participate in normal listing, expiry, and clearing.
+`PersistentCache` remains the single persistent-cache implementation and the sole owner of cache naming. It maps a source identity to `cache-<sha256>.mv.db`. File-cache data and its inferred graph share that database; JDBC targets receive metadata-only databases under the same cache root. Database target identity is derived entirely from JDBC configuration, so choosing a cache file never opens or inspects the source database.
 
 ## Ambiguity and Safety
 
@@ -47,7 +47,7 @@ An all-null inferred key represents an absent joined object. A partially null in
 
 ## Cache and CLI
 
-The default graph expiry is 24 hours. `--metadata-expiry-hours N` persists a target-specific expiry; zero refreshes every use. `--metadata-refresh` rebuilds the selected JDBC or active input-cache target transactionally and exits. Cache identities include connection URL/product/catalog/schema but never passwords.
+The default graph expiry is 24 hours. `--metadata-expiry-hours N` persists a target-specific expiry; zero refreshes every use. `--metadata-refresh` rebuilds the selected JDBC or active input-cache target transactionally and exits. Direct JDBC cache identities include the configured URL, driver and username but never passwords. Input-cache identities include the normalized source path, input type and materialization variant.
 
 ## Test Strategy
 

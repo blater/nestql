@@ -473,7 +473,7 @@ The active selection is stored in:
 ~/.nestql/config.properties
 ```
 
-It records both the cache root and generated cache directory, so a cache loaded with a custom `--cache-dir` remains active without repeating that option.
+It records the generated cache file, so a cache loaded with a custom `--cache-dir` remains active without repeating that option. Cache databases use the form `cache-<source-hash>.mv.db`; the hash is derived from configuration and never requires a database connection.
 
 Cache reuse is automatic. Once a cache exists for an input path, nestQL reuses it until it is explicitly cleared. The cache is not synchronized with changes to the input file. An explicit Parquet `--parquet-record` name is part of the cache identity because it changes the generated table name; `--parquet-root` is not, because the hierarchy root is not materialized as a cache table. Clearing a Parquet input path clears all record-name variants for that source file.
 

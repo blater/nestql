@@ -321,8 +321,8 @@ class MainTest {
 
     assertTrue(refreshed.contains("Refreshed database key metadata"));
     assertTrue(configured.contains("expiry set to 0"));
-    try (var directories = Files.list(cache)) {
-      assertEquals(1, directories.filter(Files::isDirectory).count());
+    try (var files = Files.list(cache)) {
+      assertEquals(1, files.filter(path -> path.getFileName().toString().endsWith(".mv.db")).count());
     }
   }
 

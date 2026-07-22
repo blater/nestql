@@ -10,6 +10,7 @@ import blater.nestql.runner.sql.cache.PersistentCache;
 import blater.nestql.util.Log;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
@@ -69,10 +70,12 @@ public final class KeyInference {
       Map<String, String> parameters,
       long expiryHours) throws SQLException {
     DatabaseStructure structure = structure(executor, parameters, false, List.of());
-    DatabaseTargetIdentity target = DatabaseTargetIdentity.from(executor.connection());
-    String storageDirectory = storageDirectory(executor, target);
+    DatabaseTargetIdentity target = DatabaseTargetIdentity.from(parameters);
+    String identityText = executor.cacheIdentity().orElse(target.identityText());
+    Path cacheFile = executor.cacheFile().orElseGet(() ->
+        PersistentCache.cacheFile(identityText, parameters));
     PersistentCache.setArtifactExpiry(
-        storageDirectory, target.identityText(), expiryHours, parameters);
+        cacheFile, identityText, expiryHours);
     return structure;
   }
 
@@ -81,10 +84,12 @@ public final class KeyInference {
       Map<String, String> parameters,
       boolean forceRefresh,
       List<String> referencedRelations) throws SQLException {
-    DatabaseTargetIdentity target = DatabaseTargetIdentity.from(executor.connection());
-    String storageDirectory = storageDirectory(executor, target);
+    DatabaseTargetIdentity target = DatabaseTargetIdentity.from(parameters);
+    String identityText = executor.cacheIdentity().orElse(target.identityText());
+    Path cacheFile = executor.cacheFile().orElseGet(() ->
+        PersistentCache.cacheFile(identityText, parameters));
     Optional<CachedArtifact> cached = PersistentCache.readArtifact(
-        storageDirectory, target.identityText(), parameters);
+        cacheFile, identityText);
     long configuredExpiry = configuredExpiry(parameters).orElseGet(() ->
         cached.map(CachedArtifact::expiryHours).orElse(DEFAULT_EXPIRY_HOURS));
     if (!forceRefresh && cached.isPresent() && cached.get().version() == GRAPH_VERSION
@@ -92,7 +97,7 @@ public final class KeyInference {
       try {
         if (configuredExpiry != cached.get().expiryHours()) {
           PersistentCache.setArtifactExpiry(
-              storageDirectory, target.identityText(), configuredExpiry, parameters);
+              cacheFile, identityText, configuredExpiry);
         }
         DatabaseStructure structure = DatabaseStructureCodec.decode(cached.get().payload());
         if (referencedRelations.isEmpty()
@@ -109,13 +114,12 @@ public final class KeyInference {
     DatabaseStructure inferred = DatabaseStructureInferrer.infer(executor.connection());
     try {
       boolean persisted = PersistentCache.writeArtifact(
-          storageDirectory,
-          target.identityText(),
+          cacheFile,
+          identityText,
           target.displayName(),
           GRAPH_VERSION,
           configuredExpiry,
-          DatabaseStructureCodec.encode(inferred),
-          parameters);
+          DatabaseStructureCodec.encode(inferred));
       if (forceRefresh && !persisted) {
         throw new SQLException("Inferred metadata could not be written to the persistent cache.");
       }
@@ -123,13 +127,6 @@ public final class KeyInference {
       Log.warn("Could not persist inferred database structure: {}", ex.getMessage());
     }
     return inferred;
-  }
-
-  private static String storageDirectory(
-      SqlExecutor executor,
-      DatabaseTargetIdentity target) {
-    return PersistentCache.inputCacheStorageDirectory(executor.connection())
-        .orElse(target.directoryName());
   }
 
   private static boolean fresh(CachedArtifact cached, long expiryHours) {

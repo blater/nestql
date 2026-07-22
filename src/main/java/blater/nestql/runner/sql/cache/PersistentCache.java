@@ -5,8 +5,11 @@ import blater.nestql.util.Log;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -16,6 +19,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,11 +33,10 @@ import static blater.nestql.ParameterParser.*;
  * and cache clearing operations.
  */
 public final class PersistentCache {
-  private static final String CACHE_DATABASE = "cache";
-  private static final String H2_DATABASE_FILE = CACHE_DATABASE + ".mv.db";
+  private static final String CACHE_FILE_PREFIX = "cache-";
+  private static final String H2_DATABASE_SUFFIX = ".mv.db";
   private static final int METADATA_ROW_ID = 1;
-  private static final String ACTIVE_CACHE_ROOT = "active.cache.root";
-  private static final String ACTIVE_CACHE_DIRECTORY = "active.cache.directory";
+  private static final String ACTIVE_CACHE_FILE = "active.cache.file";
   private static final int ARTIFACT_ROW_ID = 1;
 
   private PersistentCache() { }
@@ -74,35 +77,32 @@ public final class PersistentCache {
 
   public static CacheHandle prepare(CacheSource source, Map<String, String> params)
   {
-    Path cacheDir = cacheRoot(params).resolve(source.directoryName());
+    Path cacheFile = cacheFile(source.identityText(), params);
+    createDirectories(cacheFile.getParent());
 
-    if (readMetadata(cacheDir).filter(source::matches).isPresent())
+    if (readMetadata(cacheFile).filter(source::matches).isPresent())
     {
-      return new CacheHandle(cacheDir, jdbcUrl(cacheDir), false, source);
+      return new CacheHandle(cacheFile, jdbcUrl(cacheFile), false, source);
     }
 
-    deleteDirectory(cacheDir);
-    createDirectories(cacheDir);
-    return new CacheHandle(cacheDir, jdbcUrl(cacheDir), true, source);
+    deleteCache(cacheFile);
+    return new CacheHandle(cacheFile, jdbcUrl(cacheFile), true, source);
   }
 
   public static void markLoaded(CacheHandle handle) {
-    createDirectories(handle.cacheDir());
-    writeMetadata(handle.cacheDir(), handle.source());
+    writeMetadata(handle.cacheFile(), handle.source());
   }
 
   public static Optional<CachedArtifact> readArtifact(
-      String directoryName,
-      String identityText,
-      Map<String, String> params) {
-    Path cacheDir = artifactDirectory(directoryName, params);
-    if (!Files.exists(h2DatabaseFile(cacheDir))) return Optional.empty();
+      Path cacheFile,
+      String identityText) {
+    if (!Files.exists(cacheFile)) return Optional.empty();
     String sql = """
         select payload, artifact_version, refreshed_millis, expiry_hours
         from nestql_internal.cache_artifact
         where id = ? and identity_text = ?
         """;
-    try (Connection connection = connect(cacheDir, true);
+    try (Connection connection = connect(cacheFile, true);
          PreparedStatement statement = connection.prepareStatement(sql)) {
       statement.setInt(1, ARTIFACT_ROW_ID);
       statement.setString(2, identityText);
@@ -115,27 +115,25 @@ public final class PersistentCache {
             resultSet.getLong("expiry_hours")));
       }
     } catch (SQLException ex) {
-      Log.debug("Could not read cached artifact [{}]: {}", cacheDir, ex.getMessage());
+      Log.debug("Could not read cached artifact [{}]: {}", cacheFile, ex.getMessage());
       return Optional.empty();
     }
   }
 
   public static boolean writeArtifact(
-      String directoryName,
+      Path cacheFile,
       String identityText,
       String displayName,
       int version,
       long expiryHours,
-      byte[] payload,
-      Map<String, String> params) {
-    Path cacheDir = artifactDirectory(directoryName, params);
+      byte[] payload) {
     try {
-      Files.createDirectories(cacheDir);
+      Files.createDirectories(cacheFile.getParent());
     } catch (IOException ex) {
-      Log.warn("Could not create database-structure cache directory [{}]: {}", cacheDir, ex.getMessage());
+      Log.warn("Could not create database-structure cache directory [{}]: {}", cacheFile.getParent(), ex.getMessage());
       return false;
     }
-    try (Connection connection = connect(cacheDir, false)) {
+    try (Connection connection = connect(cacheFile, false)) {
       connection.setAutoCommit(false);
       try {
         createMetadataTable(connection);
@@ -170,18 +168,16 @@ public final class PersistentCache {
       }
       return true;
     } catch (SQLException ex) {
-      Log.warn("Could not write cached database structure [{}]: {}", cacheDir, ex.getMessage());
+      Log.warn("Could not write cached database structure [{}]: {}", cacheFile, ex.getMessage());
       return false;
     }
   }
 
   public static void setArtifactExpiry(
-      String directoryName,
+      Path cacheFile,
       String identityText,
-      long expiryHours,
-      Map<String, String> params) {
-    Path cacheDir = artifactDirectory(directoryName, params);
-    try (Connection connection = connect(cacheDir, true);
+      long expiryHours) {
+    try (Connection connection = connect(cacheFile, true);
          PreparedStatement statement = connection.prepareStatement(
              "update nestql_internal.cache_artifact set expiry_hours = ? where id = ? and identity_text = ?")) {
       statement.setLong(1, expiryHours);
@@ -189,30 +185,24 @@ public final class PersistentCache {
       statement.setString(3, identityText);
       statement.executeUpdate();
     } catch (SQLException ex) {
-      Log.warn("Could not update cached database structure expiry [{}]: {}", cacheDir, ex.getMessage());
+      Log.warn("Could not update cached database structure expiry [{}]: {}", cacheFile, ex.getMessage());
     }
   }
 
   public static void activate(CacheHandle handle) {
-    Path cacheDir = handle.cacheDir().toAbsolutePath().normalize();
-    Path root = cacheDir.getParent();
-    if (root == null || cacheDir.getFileName() == null) {
-      Log.fatal(IllegalArgumentException.class, "Invalid cache directory: " + cacheDir);
-    }
     Properties config = readConfig();
-    config.setProperty(ACTIVE_CACHE_ROOT, root.toString());
-    config.setProperty(ACTIVE_CACHE_DIRECTORY, cacheDir.getFileName().toString());
+    config.setProperty(ACTIVE_CACHE_FILE, handle.cacheFile().toAbsolutePath().normalize().toString());
     writeConfig(config);
   }
 
   public static Optional<CacheHandle> active() {
-    Optional<Path> configured = configuredActiveCacheDirectory();
+    Optional<Path> configured = configuredActiveCacheFile();
     if (configured.isEmpty()) {
       return Optional.empty();
     }
 
-    Path cacheDir = configured.get();
-    Optional<Metadata> metadata = readMetadata(cacheDir);
+    Path cacheFile = configured.get();
+    Optional<Metadata> metadata = readMetadata(cacheFile);
     if (metadata.isEmpty()) {
       clearActiveSelection();
       return Optional.empty();
@@ -220,7 +210,7 @@ public final class PersistentCache {
 
     try {
       CacheSource source = metadata.get().source();
-      return Optional.of(new CacheHandle(cacheDir, jdbcUrl(cacheDir), false, source));
+      return Optional.of(new CacheHandle(cacheFile, jdbcUrl(cacheFile), false, source));
     } catch (RuntimeException ex) {
       clearActiveSelection();
       return Optional.empty();
@@ -229,8 +219,8 @@ public final class PersistentCache {
 
   static int clearAll(Map<String, String> params) {
     int cleared = 0;
-    for (Path cacheDir : cacheDirectories(params)) {
-      deleteDirectory(cacheDir);
+    for (Path cacheFile : cacheFiles(params)) {
+      deleteCache(cacheFile);
       cleared++;
     }
     clearActiveIfMissing();
@@ -238,42 +228,28 @@ public final class PersistentCache {
   }
 
   static List<CacheEntry> listCaches(Map<String, String> params) {
-    Path root = cacheRoot(params);
-    if (!Files.exists(root)) {
-      return List.of();
-    }
-
-    Optional<Path> activeCache = active().map(CacheHandle::cacheDir);
-    try (Stream<Path> paths = Files.list(root)) {
-      return paths.filter(Files::isDirectory)
-          .map(cacheDir -> readMetadata(cacheDir).map(metadata -> new CacheEntry(
-              metadata.sourcePath(),
-              metadata.inputType(),
-              metadata.createdMillis(),
-              activeCache.map(cacheDir::equals).orElse(false))))
-          .flatMap(Optional::stream)
-          .sorted(Comparator.comparing(CacheEntry::sourcePath))
-          .toList();
-    } catch (IOException ex) {
-      return Log.fatal(IllegalStateException.class, "Could not list cache directory: " + root, ex);
-    }
+    Optional<Path> activeCache = active().map(CacheHandle::cacheFile);
+    return cacheFiles(params).stream()
+        .map(cacheFile -> readMetadata(cacheFile).map(metadata -> new CacheEntry(
+            metadata.sourcePath(),
+            metadata.inputType(),
+            metadata.createdMillis(),
+            activeCache.map(cacheFile::equals).orElse(false))))
+        .flatMap(Optional::stream)
+        .sorted(Comparator.comparing(CacheEntry::sourcePath))
+        .toList();
   }
 
   public static int clearForInput(String inputFilename, Map<String, String> params) {
     String sourcePath = CacheSource.normalizedSourcePath(inputFilename).toString();
     int cleared = 0;
-    for (Path cacheDir : cacheDirectories(params)) {
-      if (readMetadata(cacheDir)
+    for (Path cacheFile : cacheFiles(params)) {
+      if (readMetadata(cacheFile)
           .map(metadata -> sourcePath.equals(metadata.sourcePath()))
           .orElse(false)) {
-        deleteDirectory(cacheDir);
+        deleteCache(cacheFile);
         cleared++;
       }
-    }
-    Path legacyCacheDir = cacheRoot(params).resolve(Integer.toUnsignedString(sourcePath.hashCode(), 16));
-    if (Files.exists(legacyCacheDir)) {
-      deleteDirectory(legacyCacheDir);
-      cleared++;
     }
     clearActiveIfMissing();
     return cleared;
@@ -282,9 +258,9 @@ public final class PersistentCache {
   public static int clearOlderThan(Duration duration, Map<String, String> params) {
     long cutoffMillis = Instant.now().minus(duration).toEpochMilli();
     int cleared = 0;
-    for (Path cacheDir : cacheDirectories(params)) {
-      if (readMetadata(cacheDir).map(metadata -> metadata.createdMillis() < cutoffMillis).orElse(false)) {
-        deleteDirectory(cacheDir);
+    for (Path cacheFile : cacheFiles(params)) {
+      if (readMetadata(cacheFile).map(metadata -> metadata.createdMillis() < cutoffMillis).orElse(false)) {
+        deleteCache(cacheFile);
         cleared++;
       }
     }
@@ -322,33 +298,41 @@ public final class PersistentCache {
     return Path.of(configured).toAbsolutePath().normalize();
   }
 
+  public static Path cacheFile(String identityText, Map<String, String> params) {
+    return cacheRoot(params).resolve(CACHE_FILE_PREFIX + sha256(identityText) + H2_DATABASE_SUFFIX);
+  }
+
   static Path configFile() {
     return Path.of(System.getProperty("user.home"), ".nestql", "config.properties")
         .toAbsolutePath()
         .normalize();
   }
 
-  private static String jdbcUrl(Path cacheDir) {
-    return "jdbc:h2:file:" + cacheDir.resolve(CACHE_DATABASE).toAbsolutePath().normalize() + ";MODE=MySQL;NON_KEYWORDS=VALUE";
+  private static String jdbcUrl(Path cacheFile) {
+    return "jdbc:h2:file:" + databasePath(cacheFile) + ";MODE=MySQL;NON_KEYWORDS=VALUE";
   }
 
-  private static String existingJdbcUrl(Path cacheDir) {
-    return jdbcUrl(cacheDir) + ";IFEXISTS=TRUE";
+  private static String existingJdbcUrl(Path cacheFile) {
+    return jdbcUrl(cacheFile) + ";IFEXISTS=TRUE";
   }
 
-  private static Path h2DatabaseFile(Path cacheDir) {
-    return cacheDir.resolve(H2_DATABASE_FILE);
+  private static String databasePath(Path cacheFile) {
+    String path = cacheFile.toAbsolutePath().normalize().toString();
+    if (!path.endsWith(H2_DATABASE_SUFFIX)) {
+      return Log.fatal(IllegalArgumentException.class, "Invalid H2 cache filename: " + cacheFile);
+    }
+    return path.substring(0, path.length() - H2_DATABASE_SUFFIX.length());
   }
 
-  private static Optional<Metadata> readMetadata(Path cacheDir) {
-    if (!Files.exists(h2DatabaseFile(cacheDir))) {
+  private static Optional<Metadata> readMetadata(Path cacheFile) {
+    if (!Files.exists(cacheFile)) {
       return Optional.empty();
     }
 
-    try (Connection connection = connect(cacheDir, true)) {
+    try (Connection connection = connect(cacheFile, true)) {
       return readMetadata(connection);
     } catch (SQLException ex) {
-      Log.debug("Could not read cache metadata [{}]: {}", cacheDir, ex.getMessage());
+      Log.debug("Could not read cache metadata [{}]: {}", cacheFile, ex.getMessage());
       return Optional.empty();
     }
   }
@@ -376,8 +360,8 @@ public final class PersistentCache {
     }
   }
 
-  private static void writeMetadata(Path cacheDir, CacheSource source) {
-    try (Connection connection = connect(cacheDir, false)) {
+  private static void writeMetadata(Path cacheFile, CacheSource source) {
+    try (Connection connection = connect(cacheFile, false)) {
       createMetadataTable(connection);
       long now = Instant.now().toEpochMilli();
       try (PreparedStatement delete = connection.prepareStatement("delete from cache_metadata where id = ?")) {
@@ -398,7 +382,7 @@ public final class PersistentCache {
         insert.executeUpdate();
       }
     } catch (SQLException ex) {
-      Log.fatal(IllegalStateException.class, "Could not write cache metadata: " + cacheDir, ex);
+      Log.fatal(IllegalStateException.class, "Could not write cache metadata: " + cacheFile, ex);
     }
   }
 
@@ -432,31 +416,6 @@ public final class PersistentCache {
     }
   }
 
-  public static Optional<String> inputCacheStorageDirectory(Connection connection) {
-    try {
-      Optional<Metadata> metadata = readMetadata(connection);
-      if (metadata.isEmpty() || "DATABASE_STRUCTURE".equals(metadata.get().inputType())) {
-        return Optional.empty();
-      }
-      String url = connection.getMetaData().getURL();
-      String prefix = "jdbc:h2:file:";
-      if (url == null || !url.startsWith(prefix)) return Optional.empty();
-      String databasePath = url.substring(prefix.length());
-      int options = databasePath.indexOf(';');
-      if (options >= 0) databasePath = databasePath.substring(0, options);
-      Path file = Path.of(databasePath).toAbsolutePath().normalize();
-      Path directory = file.getParent();
-      return directory == null ? Optional.empty() : Optional.of(directory.toString());
-    } catch (SQLException | RuntimeException ex) {
-      return Optional.empty();
-    }
-  }
-
-  private static Path artifactDirectory(String directoryName, Map<String, String> params) {
-    Path requested = Path.of(directoryName);
-    return requested.isAbsolute() ? requested.normalize() : cacheRoot(params).resolve(requested).normalize();
-  }
-
   private static void writeArtifactMetadata(
       Connection connection,
       String identityText,
@@ -479,55 +438,44 @@ public final class PersistentCache {
     }
   }
 
-  private static Connection connect(Path cacheDir, boolean existingOnly) throws SQLException {
+  private static Connection connect(Path cacheFile, boolean existingOnly) throws SQLException {
     try {
       Class.forName("org.h2.Driver");
     } catch (ClassNotFoundException ex) {
       return Log.fatal(IllegalStateException.class, "H2 driver is not available", ex);
     }
-    return DriverManager.getConnection(existingOnly ? existingJdbcUrl(cacheDir) : jdbcUrl(cacheDir), "sa", "");
+    return DriverManager.getConnection(existingOnly ? existingJdbcUrl(cacheFile) : jdbcUrl(cacheFile), "sa", "");
   }
 
-  private static List<Path> cacheDirectories(Map<String, String> params) {
+  private static List<Path> cacheFiles(Map<String, String> params) {
     Path root = cacheRoot(params);
     if (!Files.exists(root)) {
       return List.of();
     }
 
     try (Stream<Path> paths = Files.list(root)) {
-      return paths.filter(Files::isDirectory).toList();
+      return paths.filter(PersistentCache::isCacheFile).toList();
     } catch (IOException ex) {
-      return Log.fatal(IllegalStateException.class, "Could not list cache directory: " + root, ex);
+      return Log.fatal(IllegalStateException.class, "Could not list cache files: " + root, ex);
     }
   }
 
-  private static Optional<Path> configuredActiveCacheDirectory() {
+  private static boolean isCacheFile(Path path) {
+    String filename = path.getFileName().toString();
+    return Files.isRegularFile(path)
+        && filename.startsWith(CACHE_FILE_PREFIX)
+        && filename.endsWith(H2_DATABASE_SUFFIX);
+  }
+
+  private static Optional<Path> configuredActiveCacheFile() {
     Properties config = readConfig();
-    String rootValue = config.getProperty(ACTIVE_CACHE_ROOT);
-    String directoryValue = config.getProperty(ACTIVE_CACHE_DIRECTORY);
-    boolean rootMissing = rootValue == null || rootValue.isBlank();
-    boolean directoryMissing = directoryValue == null || directoryValue.isBlank();
-    if (rootMissing && directoryMissing) {
-      return Optional.empty();
-    }
-    if (rootMissing || directoryMissing) {
-      clearActiveSelection();
+    String value = config.getProperty(ACTIVE_CACHE_FILE);
+    if (value == null || value.isBlank()) {
       return Optional.empty();
     }
 
     try {
-      Path directoryName = Path.of(directoryValue);
-      if (directoryName.getNameCount() != 1 || directoryName.isAbsolute()) {
-        clearActiveSelection();
-        return Optional.empty();
-      }
-      Path root = Path.of(rootValue).toAbsolutePath().normalize();
-      Path cacheDir = root.resolve(directoryName).normalize();
-      if (!root.equals(cacheDir.getParent())) {
-        clearActiveSelection();
-        return Optional.empty();
-      }
-      return Optional.of(cacheDir);
+      return Optional.of(Path.of(value).toAbsolutePath().normalize());
     } catch (RuntimeException ex) {
       clearActiveSelection();
       return Optional.empty();
@@ -561,7 +509,7 @@ public final class PersistentCache {
   }
 
   private static void clearActiveIfMissing() {
-    Optional<Path> activeCache = configuredActiveCacheDirectory();
+    Optional<Path> activeCache = configuredActiveCacheFile();
     if (activeCache.isPresent() && !Files.exists(activeCache.get())) {
       clearActiveSelection();
     }
@@ -569,8 +517,7 @@ public final class PersistentCache {
 
   private static void clearActiveSelection() {
     Properties config = readConfig();
-    boolean changed = config.remove(ACTIVE_CACHE_ROOT) != null;
-    changed = config.remove(ACTIVE_CACHE_DIRECTORY) != null || changed;
+    boolean changed = config.remove(ACTIVE_CACHE_FILE) != null;
     if (!changed) {
       return;
     }
@@ -595,17 +542,11 @@ public final class PersistentCache {
     }
   }
 
-  private static void deleteDirectory(Path dir) {
-    if (!Files.exists(dir)) {
-      return;
-    }
-
-    try (Stream<Path> paths = Files.walk(dir)) {
-      paths.sorted(Comparator.reverseOrder())
-          .forEach(PersistentCache::deletePath);
-    } catch (IOException ex) {
-      Log.fatal(IllegalStateException.class, "Could not delete cache directory: " + dir, ex);
-    }
+  private static void deleteCache(Path cacheFile) {
+    String base = databasePath(cacheFile);
+    Stream.of(".mv.db", ".trace.db", ".lock.db", ".temp.db", ".newFile", ".tempFile")
+        .map(suffix -> Path.of(base + suffix))
+        .forEach(PersistentCache::deletePath);
   }
 
   private static void deletePath(Path path) {
@@ -613,6 +554,16 @@ public final class PersistentCache {
       Files.deleteIfExists(path);
     } catch (IOException ex) {
       Log.fatal(IllegalStateException.class, "Could not delete cache path: " + path, ex);
+    }
+  }
+
+  private static String sha256(String value) {
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256")
+          .digest(value.getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(digest);
+    } catch (NoSuchAlgorithmException ex) {
+      return Log.fatal(IllegalStateException.class, "SHA-256 is not available", ex);
     }
   }
 

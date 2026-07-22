@@ -86,7 +86,10 @@ public final class CacheExecution {
   private static SqlExecutor open(
       CacheHandle handle,
       Map<String, String> parameters) {
-    SqlExecutor executor = new SqlExecutor(jdbcParameters(parameters, handle.jdbcUrl()));
+    SqlExecutor executor = new SqlExecutor(
+        jdbcParameters(parameters, handle.jdbcUrl()),
+        handle.cacheFile(),
+        handle.source().identityText());
     try {
       loadIfNeeded(handle, parameters, executor);
       return executor;
