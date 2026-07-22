@@ -63,6 +63,8 @@
     {
       "id": "FEST200",
       "name": "Riverside Arts Weekend",
+      "date-from": "2026-07-11",
+      "date-to": "2026-07-12",
       "event_manager_person_id": "PER004",
       "event_team": [
         {
@@ -115,6 +117,8 @@
       "id": "FEST201",
       "name": "Harbour Lights Festival",
       "event_manager_person_id": "PER001",
+      "date-from": "2026-09-07",
+      "date-to": "2026-09-13",
       "event_team": [
         {
           "id": "FTEAM211",
@@ -146,6 +150,8 @@
     {
       "id": "FEST202",
       "name": "Hilltop Food Fair",
+      "date-from": "2026-08-08",
+      "date-to": "2026-08-08",
       "event_manager_person_id": "PER004",
       "event_team": [
         {
@@ -178,6 +184,8 @@
     {
       "id": "FEST203",
       "name": "Old Town Theatre Festival",
+      "date-from": "2026-07-28",
+      "date-to": "2026-07-30",
       "event_manager_person_id": "PER001",
       "event_team": [
         {
@@ -210,6 +218,8 @@
     {
       "id": "FEST204",
       "name": "Summer Jazz Gardens",
+      "date-from": "2026-08-22",
+      "date-to": "2026-08-22",
       "event_manager_person_id": "PER004",
       "event_team": [
         {
