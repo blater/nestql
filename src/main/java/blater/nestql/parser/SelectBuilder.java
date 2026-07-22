@@ -43,10 +43,15 @@ final class SelectBuilder {
 
 
     if (!hasHierarchyFields) {
+      SelectBlueprint blueprint = new SelectBlueprint(
+          branches.stream().map(SelectBuilder::toBlueprintBranch).toList(),
+          List.of(),
+          List.of());
       return NestStatement.select(
           ParseUtils.textOf(ctx).trim(),
           new MappingPlan(),
-          using.namespace
+          using.namespace,
+          blueprint
       );
     }
 

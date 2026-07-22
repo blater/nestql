@@ -826,6 +826,24 @@ Rows with the same inferred company key contribute to one object. Add an explici
 structure {companies.company} key (id)
 ```
 
+A directly mapped top-level object can also be inferred without an artificial container:
+
+```sql
+select name into {festival.name} from festival;
+```
+
+The final path segment is the field, the segment above it is the object that owns the field, and the next segment—when present—names the enclosing inferred collection. Higher segments remain ordinary containers:
+
+| Mapping | JSON shape |
+|---|---|
+| no `into` mapping | `[{"name":"..."}]` |
+| `{name}` | `[{"name":"..."}]` |
+| `{festival.name}` | `[{"festival":{"name":"..."}}]` |
+| `{res.festival.name}` | `{"res":[{"festival":{"name":"..."}}]}` |
+| `{root.res.festival.name}` | `{"root":{"res":[{"festival":{"name":"..."}}]}}` |
+
+Inferred collections remain arrays for zero, one, or many objects. XML introduces a `<result>` document element when the inferred collection has no ordinary named root.
+
 The explicit tuple is complete and authoritative for `{companies.company}`. Inference cannot add to or replace it, but remains available for undeclared sibling and descendant paths, even when they use the same table or alias. Use `--no-key-inference` to disable inference for the entire query.
 
 Keys are typed tuples. Use a comma-separated list for a composite identity:
@@ -1404,6 +1422,7 @@ where id = 'C1';
 ### XML Output
 
 - Root hierarchy node becomes the XML root element.
+- Inferred synthetic roots use document element `result`.
 - Attribute nodes render as XML attributes.
 - Null nodes render with `nil="true"`.
 - Namespace metadata from `using namespace = ...` is applied to the root.
@@ -1413,6 +1432,8 @@ where id = 'C1';
 Writer: `JsonOutputWriter`.
 
 - Root node becomes a single top-level JSON property.
+- Inferred outer collections retain their array shape for zero, one, or many objects.
+- A missing collection name produces an anonymous array whose items retain their mapped object name.
 - Child containers become nested objects.
 - Repeated sibling names become arrays.
 - Value nodes become JSON strings.
@@ -1425,6 +1446,8 @@ Writer: `JsonOutputWriter`.
 Writer: `YamlOutputWriter`.
 
 - Root node becomes a top-level mapping key.
+- Inferred outer collections retain their sequence shape for zero, one, or many objects.
+- A missing collection name produces an anonymous sequence whose items retain their mapped object name.
 - Child containers become nested mappings.
 - Repeated sibling names become sequences.
 - Value nodes become quoted string scalars.
@@ -1439,6 +1462,7 @@ Writer: `CsvOutputWriter`.
 CSV is a flat format, so hierarchy is flattened:
 
 - If the root contains only one repeated child group, those children become CSV records.
+- Keyed top-level records also become CSV records, including a single record.
 - Otherwise, the root itself is written as one record.
 - Nested scalar nodes become dotted column names.
 - Repeated scalar nodes join in one cell with `|`.
@@ -1453,6 +1477,7 @@ Writer: `MarkdownOutputWriter`.
 Markdown renders one fixed-width, human-readable table:
 
 - If the root contains only one repeated child group, those children become table rows.
+- Keyed top-level records also become table rows, including a single record.
 - Otherwise, the root itself is written as one row.
 - Nested scalar nodes become dotted column names.
 - Repeated nodes expand into rows, with parent values repeated on each row.

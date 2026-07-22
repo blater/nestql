@@ -31,11 +31,13 @@ public class CsvOutputWriter implements OutputWriter {
 
   public static String map(Hierarchy hierarchy) {
     Node root = hierarchy == null ? null : hierarchy.getRoot();
-    if (root == null || root.getName() == null || root.getName().isEmpty()) {
+    if (root == null || root.getName() == null) {
       return "";
     }
 
-    List<Node> records = recordNodes(root);
+    List<Node> records = hierarchy.getRootKind() == Hierarchy.RootKind.SYNTHETIC_ARRAY
+        ? root.getChildren()
+        : recordNodes(root);
     List<Map<String, String>> rows = new ArrayList<>(records.size());
     List<String> columns = new ArrayList<>();
     for (Node record : records) {
@@ -57,6 +59,9 @@ public class CsvOutputWriter implements OutputWriter {
     Map<String, List<Node>> children = groupedChildren(root);
     if (children.size() == 1) {
       List<Node> onlyChildGroup = children.values().iterator().next();
+      if (onlyChildGroup.size() == 1 && onlyChildGroup.getFirst().isCollection()) {
+        return onlyChildGroup.getFirst().getChildren();
+      }
       if (onlyChildGroup.size() > 1) {
         return onlyChildGroup;
       }

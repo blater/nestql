@@ -44,6 +44,43 @@ class YamlOutputWriterTest {
   }
 
   @Test
+  void anonymousRootRetainsEachObjectsLogicalName() {
+    Node root = new Node("");
+    root.addNode(person("1", "Alice"));
+    root.addNode(person("2", "Bob"));
+
+    assertEquals("""
+        -
+          person:
+            id: "1"
+            firstname: "Alice"
+        -
+          person:
+            id: "2"
+            firstname: "Bob"
+        """, YamlOutputWriter.map(new Hierarchy(root)));
+  }
+
+  @Test
+  void namedInferredCollectionRemainsASequenceWithOneItem() {
+    Node root = new Node("");
+    Node collection = new Node("res");
+    collection.setCollection(true);
+    Node item = new Node("");
+    item.addNode(person("1", "Alice"));
+    collection.addNode(item);
+    root.addNode(collection);
+
+    assertEquals("""
+        res:
+          -
+            person:
+              id: "1"
+              firstname: "Alice"
+        """, YamlOutputWriter.map(new Hierarchy(root, Hierarchy.RootKind.SYNTHETIC_OBJECT)));
+  }
+
+  @Test
   void nullValuesRenderAsYamlNull() {
     Node root = new Node("person");
     Node middleName = new Node("middleName");

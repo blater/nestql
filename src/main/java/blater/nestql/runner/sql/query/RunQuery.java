@@ -1,6 +1,7 @@
 package blater.nestql.runner.sql.query;
 
 import blater.nestql.domain.Hierarchy;
+import blater.nestql.domain.MappingPlan;
 import blater.nestql.runner.inference.KeyInference;
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.SqlExecutor;
@@ -17,10 +18,18 @@ public class RunQuery {
       outputHierarchy = new Hierarchy();
 
     NestStatement executable = KeyInference.compile(stmt, parameters, sqlExecutor);
-    outputHierarchy.register(executable);
 
     String querySql = Template.expand(executable.getSql(), parameters);
     try (SqlRowCursor cursor = sqlExecutor.query(querySql)) {
+      if (!executable.isSelectProducingOutput()) {
+        var blueprint = executable.getSelectBlueprint();
+        var columnLabels = cursor.columnLabels();
+        var outputNames = blueprint == null ? columnLabels : blueprint.outputNames();
+        if (outputNames.size() != columnLabels.size()) outputNames = columnLabels;
+        executable = executable.compiledSelect(
+            executable.getSql(), MappingPlan.flatRows(columnLabels, outputNames));
+      }
+      outputHierarchy.register(executable);
       while (cursor.next()) {
         outputHierarchy.readRow(cursor.row());
       }

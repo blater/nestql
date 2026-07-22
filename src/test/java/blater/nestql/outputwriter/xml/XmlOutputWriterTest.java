@@ -2,6 +2,7 @@ package blater.nestql.outputwriter.xml;
 
 import blater.nestql.domain.Hierarchy;
 import blater.nestql.domain.HierarchyPath;
+import blater.nestql.domain.Node;
 import blater.nestql.outputwriter.XmlOutputWriter;
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.domain.QueryResultRow;
@@ -56,6 +57,27 @@ class XmlOutputWriterTest {
 
     var document = XmlOutputWriter.map(hierarchy);
     assertEquals("urn:hiql:test", document.getRootElement().getNamespaceURI());
+  }
+
+  @Test
+  void anonymousRootRendersWithResultWrapper() {
+    Node root = new Node("");
+    root.addNode(festival("First"));
+    root.addNode(festival("Second"));
+
+    var document = XmlOutputWriter.map(new Hierarchy(root));
+
+    assertEquals("result", document.getRootElement().getName());
+    assertEquals(2, children(document.getRootElement(), "festival").size());
+    assertChildText(children(document.getRootElement(), "festival").getFirst(), "name", "First");
+  }
+
+  private Node festival(String value) {
+    Node festival = new Node("festival");
+    Node name = new Node("name");
+    name.setValue(value);
+    festival.addNode(name);
+    return festival;
   }
 
   private QueryResultRow personRow(String personId, String firstname, String surname) {

@@ -31,23 +31,53 @@ public class XmlOutputWriter implements OutputWriter {
 
   public static Document map(Hierarchy hierarchy) {
     Node rootNode = hierarchy.getRoot();
-    if (rootNode == null || rootNode.getName() == null || rootNode.getName().isEmpty())
+    if (rootNode == null || rootNode.getName() == null)
       return new Document(); // empty doc
 
-    var rootElement = new Element(rootNode.getName());
+    Node contentNode = rootNode;
+    String rootName = hierarchy.getRootKind() == Hierarchy.RootKind.NAMED
+        ? rootNode.getName()
+        : "result";
+    var rootElement = new Element(rootName);
     if (hierarchy.hasNamespace())
       rootElement.setNamespace(Namespace.getNamespace(hierarchy.getNamespace()));
 
-    writeChildren(rootElement, rootNode);
+    if (contentNode.isCollection()) {
+      writeAnonymousCollection(rootElement, contentNode);
+    } else {
+      writeChildren(rootElement, contentNode);
+    }
     return new Document(rootElement);
   }
 
   private static void writeChildren(Element parent, Node node) {
     for (var child : node.getChildren()) {
-      if (child.isAttribute()) {
+      if (child.isCollection()) {
+        writeNamedCollection(parent, child);
+      } else if (child.isAttribute()) {
         writeAttribute(parent, child);
       } else {
         writeNode(parent, child);
+      }
+    }
+  }
+
+  private static void writeNamedCollection(Element parent, Node collection) {
+    for (Node item : collection.getChildren()) {
+      Element element = new Element(collection.getName());
+      writeChildren(element, item);
+      parent.addContent(element);
+    }
+  }
+
+  private static void writeAnonymousCollection(Element parent, Node collection) {
+    for (Node item : collection.getChildren()) {
+      if (item.getChildren().size() == 1 && !item.getChildren().getFirst().isAttribute()) {
+        writeNode(parent, item.getChildren().getFirst());
+      } else {
+        Element row = new Element("row");
+        writeChildren(row, item);
+        parent.addContent(row);
       }
     }
   }
@@ -64,7 +94,7 @@ public class XmlOutputWriter implements OutputWriter {
   }
 
   private static void writeNode(Element parent, Node node) {
-    var child = new Element(nodeName(node));
+    var child = new Element(node.getName() == null || node.getName().isEmpty() ? "row" : nodeName(node));
     if (node.hasValue()) {
       if (node.isNull()) {
         child.setAttribute("nil", "true");

@@ -25,6 +25,17 @@ class CsvOutputWriterTest {
   }
 
   @Test
+  void anonymousRootRendersItsSingleChildAsARecord() {
+    Node root = new Node("");
+    root.addNode(person("1", "Alice"));
+
+    assertEquals("""
+        id,firstname
+        1,Alice
+        """, CsvOutputWriter.map(new Hierarchy(root)));
+  }
+
+  @Test
   void nestedScalarHierarchyRendersDottedColumns() {
     Node root = new Node("person");
     root.addNode(valueNode("id", "1"));

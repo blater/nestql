@@ -37,6 +37,8 @@ An explicit path has no inference ambiguity: its supplied tuple wins. For undecl
 
 An all-null inferred key represents an absent joined object. A partially null inferred key uses row-local identity rather than coalescing unrelated rows. If a complete inferred key coalesces rows with conflicting scalar values, nestQL retains the first value and warns once per affected path that data may have been lost. Existing explicit-key conflict behaviour is unchanged.
 
+The outermost inferred key identifies the mapped object, while its parent path identifies the enclosing collection. Thus `{res.festival.name}` forms collection `res`, object `festival`, and field `name`; `{festival.name}` uses an anonymous collection. The hierarchy stores collection items explicitly, so zero, one, and many results have the same array shape. Descendant inferred keys continue to repeat at their own object paths, preserving nested collection inference. Explicit keys retain exact-path repetition semantics. XML supplies a synthetic `result` document element when no ordinary document root exists.
+
 ## Query Shapes
 
 - Ordinary joins use relation keys.

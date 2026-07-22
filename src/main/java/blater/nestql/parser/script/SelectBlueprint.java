@@ -48,6 +48,11 @@ public final class SelectBlueprint {
     return explicitKeys;
   }
 
+  public List<String> outputNames() {
+    if (branches.isEmpty()) return List.of();
+    return branches.getFirst().items().stream().map(SelectItem::name).toList();
+  }
+
   public Compiled compile(List<StructureKey> inferredKeys) {
     List<StructureKey> keys = new ArrayList<>(explicitKeys);
     for (StructureKey inferred : inferredKeys) {
@@ -91,9 +96,8 @@ public final class SelectBlueprint {
           continue;
         }
         HierarchyPath path = item.outputPath().parent();
-        while (path != null && !path.isRoot()) {
+        if (path != null) {
           paths.putIfAbsent(path.toString(), path);
-          path = path.parent();
         }
       }
     }

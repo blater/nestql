@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -177,8 +178,11 @@ class MainTest {
           "create table purchase (id integer primary key, customer_id integer not null, item varchar(80), "
               + "foreign key (customer_id) references customer(id))",
           "insert into customer values (1, 'Fred')",
+          "insert into customer values (2, 'Wilma')",
           "insert into purchase values (10, 1, 'Tea')",
-          "insert into purchase values (11, 1, 'Cake')");
+          "insert into purchase values (11, 1, 'Cake')",
+          "insert into purchase values (12, 2, 'Coffee')",
+          "insert into purchase values (13, 2, 'Toast')");
     }
     Path script = write("inferred-query.nql", """
         output json;
@@ -196,8 +200,50 @@ class MainTest {
         "--cache-dir", tempDir.resolve("metadata-cache").toString()));
 
     assertEquals("""
-        {"result":{"customer":{"id":"1","name":"Fred","purchase":[{"id":"10","item":"Tea"},{"id":"11","item":"Cake"}]}}}
+        {"result":[{"customer":{"id":"1","name":"Fred","purchase":[{"id":"10","item":"Tea"},{"id":"11","item":"Cake"}]}},{"customer":{"id":"2","name":"Wilma","purchase":[{"id":"12","item":"Coffee"},{"id":"13","item":"Toast"}]}}]}
         """, output);
+  }
+
+  @Test
+  void mapsResultLevelsZeroThroughFive() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table festival (id integer primary key, name varchar(80))",
+          "insert into festival values (1, 'First')",
+          "insert into festival values (2, 'Second')");
+    }
+    record Shape(String query, String expected) { }
+    List<Shape> shapes = List.of(
+        new Shape("select name from festival order by id",
+            "[{\"name\":\"First\"},{\"name\":\"Second\"}]"),
+        new Shape("select name into {name} from festival order by id",
+            "[{\"name\":\"First\"},{\"name\":\"Second\"}]"),
+        new Shape("select name into {festival.name} from festival order by id",
+            "[{\"festival\":{\"name\":\"First\"}},{\"festival\":{\"name\":\"Second\"}}]"),
+        new Shape("select name into {res.festival.name} from festival order by id",
+            "{\"res\":[{\"festival\":{\"name\":\"First\"}},{\"festival\":{\"name\":\"Second\"}}]}"),
+        new Shape("select name into {root.res.festival.name} from festival order by id",
+            "{\"root\":{\"res\":[{\"festival\":{\"name\":\"First\"}},{\"festival\":{\"name\":\"Second\"}}]}}"),
+        new Shape("select name into {document.root.res.festival.name} from festival order by id",
+            "{\"document\":{\"root\":{\"res\":[{\"festival\":{\"name\":\"First\"}},{\"festival\":{\"name\":\"Second\"}}]}}}"));
+
+    for (int level = 0; level < shapes.size(); level++) {
+      Shape shape = shapes.get(level);
+      Path script = write("level-" + level + "-query.nql", "output json;\n" + shape.query() + ";\n");
+      String output = captureStdout(() -> Main.main(script.toString(), "-p", properties.toString(),
+          "--cache-dir", tempDir.resolve("level-metadata-cache").toString()));
+      assertEquals(shape.expected() + "\n", output, "level " + level);
+    }
+
+    Path empty = write("empty-level-3-query.nql", """
+        output json;
+        select name into {res.festival.name} from festival where id < 0;
+        """);
+    String emptyOutput = captureStdout(() -> Main.main(empty.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("level-metadata-cache").toString()));
+    assertEquals("{\"res\":[]}\n", emptyOutput);
   }
 
   @Test
@@ -299,7 +345,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("warning-cache").toString())));
 
     assertEquals("""
-        {"result":{"item":{"id":"1","label":"first"}}}
+        {"result":[{"item":{"id":"1","label":"first"}}]}
         """, output[0]);
     assertTrue(warnings.toLowerCase().contains("possible data loss"));
     assertTrue(warnings.contains("result.item.label"));
@@ -357,7 +403,7 @@ class MainTest {
         {"result":{"item":[{"code":"A","label":"Alpha"},{"code":"A","label":"Alpha"}]}}
         """, before);
     assertEquals("""
-        {"result":{"item":{"code":"A","label":"Alpha"}}}
+        {"result":[{"item":{"code":"A","label":"Alpha"}}]}
         """, after);
   }
 
@@ -393,7 +439,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("sibling-cache").toString()));
 
     assertEquals("""
-        {"result":{"parent":{"id":"1","name":"P","note":[{"id":"10","text":"N1"},{"id":"11","text":"N2"}],"tag":[{"id":"20","text":"T1"},{"id":"21","text":"T2"}]}}}
+        {"result":[{"parent":{"id":"1","name":"P","note":[{"id":"10","text":"N1"},{"id":"11","text":"N2"}],"tag":[{"id":"20","text":"T1"},{"id":"21","text":"T2"}]}}]}
         """, output);
   }
 
@@ -418,7 +464,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("partial-inferred-cache").toString()));
 
     assertEquals("""
-        {"result":{"item":[{"a":"1","b":null,"label":"first"},{"a":"1","b":null,"label":"second"}]}}
+        {"result":[{"item":{"a":"1","b":null,"label":"first"}},{"item":{"a":"1","b":null,"label":"second"}}]}
         """, output);
   }
 
@@ -444,7 +490,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("grouped-cache").toString()));
 
     assertEquals("""
-        {"result":{"summary":[{"category":"A","total":"30"},{"category":"B","total":"5"}]}}
+        {"result":[{"summary":{"category":"A","total":"30"}},{"summary":{"category":"B","total":"5"}}]}
         """, output);
   }
 
@@ -473,7 +519,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("union-cache").toString()));
 
     assertEquals("""
-        {"result":{"entry":[{"id":"1","name":"Fred"},{"id":"1","name":"Acme"}]}}
+        {"result":[{"entry":{"id":"1","name":"Fred"}},{"entry":{"id":"1","name":"Acme"}}]}
         """, output);
   }
 
@@ -745,7 +791,7 @@ class MainTest {
     assertEquals("Loaded cache for " + source + System.lineSeparator(), loaded);
     assertEquals("Using existing cache for " + source + System.lineSeparator(), reused);
     assertEquals("""
-        {"result":{"customer":{"id":"C1"}}}
+        {"result":[{"customer":{"id":"C1"}}]}
         """, queryOutput);
   }
 
@@ -771,7 +817,7 @@ class MainTest {
     String active = captureStdout(() -> Main.main(script.toString()));
 
     assertEquals("""
-        {"result":{"id":"FIRST"}}
+        [{"result":{"id":"FIRST"}}]
         """, selected);
     assertEquals(selected, active);
   }
@@ -801,7 +847,7 @@ class MainTest {
         "--cache-dir", cacheDir.toString(), "-p", properties.toString()));
 
     assertEquals("""
-        {"result":{"id":"C1"}}
+        [{"result":{"id":"C1"}}]
         """, output);
   }
 
@@ -857,7 +903,7 @@ class MainTest {
         script.toString(),
         input.toString()));
     assertEquals("""
-        {"result":{"customer":{"id":"C1"}}}
+        {"result":[{"customer":{"id":"C1"}}]}
         """, firstOutput);
     Files.delete(input);
 
@@ -868,7 +914,7 @@ class MainTest {
         input.toString()));
 
     assertEquals("""
-        {"result":{"customer":{"id":"C1"}}}
+        {"result":[{"customer":{"id":"C1"}}]}
         """, output);
   }
 
@@ -895,7 +941,7 @@ class MainTest {
         script.toString(),
         input.toString()));
     assertEquals("""
-        {"result":{"customer":{"id":"C1"}}}
+        {"result":[{"customer":{"id":"C1"}}]}
         """, firstOutput);
     Files.delete(input);
 
@@ -906,7 +952,7 @@ class MainTest {
         input.toString()));
 
     assertEquals("""
-        {"result":{"customer":{"id":"C1"}}}
+        {"result":[{"customer":{"id":"C1"}}]}
         """, output);
   }
 
@@ -954,7 +1000,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("cache-nested").toString()));
 
     assertEquals("""
-        {"result":{"countryName":"vatican city"}}
+        [{"result":{"countryName":"vatican city"}}]
         """, output);
   }
 
@@ -997,7 +1043,7 @@ class MainTest {
         "--cache-dir", tempDir.resolve("cache-contained").toString()));
 
     assertEquals("""
-        {"result":{"balance":"998.33"}}
+        [{"result":{"balance":"998.33"}}]
         """, output);
   }
 
@@ -1025,7 +1071,7 @@ class MainTest {
         input.toString()));
 
     assertEquals("""
-        {"result":{"item":{"id":"7","name":"Fred"}}}
+        {"result":[{"item":{"id":"7","name":"Fred"}}]}
         """, output);
   }
 

@@ -23,16 +23,31 @@ public class YamlOutputWriter implements OutputWriter {
 
   public static String map(Hierarchy hierarchy) {
     Node root = hierarchy == null ? null : hierarchy.getRoot();
-    if (root == null || root.getName() == null || root.getName().isEmpty()) {
+    if (root == null || root.getName() == null) {
       return "{}";
     }
 
     StringBuilder yaml = new StringBuilder();
-    writeProperty(yaml, root.getName(), nodeValue(root), 0);
+    switch (hierarchy.getRootKind()) {
+      case NAMED -> writeProperty(yaml, root.getName(), nodeValue(root), 0);
+      case SYNTHETIC_OBJECT -> {
+        Object value = nodeValue(root);
+        if (isEmptyCollection(value)) return "{}";
+        writeValueBlock(yaml, value, 0);
+      }
+      case SYNTHETIC_ARRAY -> {
+        List<Object> values = root.getChildren().stream().map(YamlOutputWriter::rootItemValue).toList();
+        if (values.isEmpty()) return "[]";
+        writeList(yaml, values, 0);
+      }
+    }
     return yaml.toString();
   }
 
   private static Object nodeValue(Node node) {
+    if (node.isCollection()) {
+      return node.getChildren().stream().map(YamlOutputWriter::rootItemValue).toList();
+    }
     if (node.isNull()) {
       return null;
     }
@@ -52,6 +67,18 @@ public class YamlOutputWriter implements OutputWriter {
       }
     }
     return object;
+  }
+
+  private static Object namedNodeValue(Node node) {
+    Map<String, Object> named = new LinkedHashMap<>();
+    named.put(node.getName(), nodeValue(node));
+    return named;
+  }
+
+  private static Object rootItemValue(Node node) {
+    return node.getName() == null || node.getName().isEmpty()
+        ? nodeValue(node)
+        : namedNodeValue(node);
   }
 
   private static void writeProperty(StringBuilder yaml, String key, Object value, int indent) {

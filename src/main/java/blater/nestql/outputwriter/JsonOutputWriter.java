@@ -23,14 +23,20 @@ public class JsonOutputWriter implements OutputWriter {
 
   public static String map(Hierarchy hierarchy) {
     Node root = hierarchy == null ? null : hierarchy.getRoot();
-    if (root == null || root.getName() == null || root.getName().isEmpty()) {
+    if (root == null || root.getName() == null) {
       return "{}";
     }
 
     StringBuilder json = new StringBuilder();
-    json.append("{");
-    writeProperty(json, root.getName(), root);
-    json.append("}");
+    switch (hierarchy.getRootKind()) {
+      case SYNTHETIC_OBJECT -> writeObject(json, root);
+      case SYNTHETIC_ARRAY -> writeRootArray(json, root.getChildren());
+      case NAMED -> {
+        json.append("{");
+        writeProperty(json, root.getName(), root);
+        json.append("}");
+      }
+    }
     return json.toString();
   }
 
@@ -39,8 +45,32 @@ public class JsonOutputWriter implements OutputWriter {
     writeValue(json, node);
   }
 
+  private static void writeNamedObject(StringBuilder json, Node node) {
+    json.append("{");
+    writeProperty(json, node.getName(), node);
+    json.append("}");
+  }
+
+  private static void writeRootArray(StringBuilder json, List<Node> nodes) {
+    json.append("[");
+    for (int index = 0; index < nodes.size(); index++) {
+      if (index > 0) {
+        json.append(",");
+      }
+      Node node = nodes.get(index);
+      if (node.getName() == null || node.getName().isEmpty()) {
+        writeObject(json, node);
+      } else {
+        writeNamedObject(json, node);
+      }
+    }
+    json.append("]");
+  }
+
   private static void writeValue(StringBuilder json, Node node) {
-    if (node.isNull()) {
+    if (node.isCollection()) {
+      writeArray(json, node.getChildren());
+    } else if (node.isNull()) {
       json.append("null");
     } else if (node.hasValue()) {
       json.append(quote(node.getValue()));

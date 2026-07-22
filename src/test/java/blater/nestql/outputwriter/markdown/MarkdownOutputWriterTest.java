@@ -32,6 +32,17 @@ class MarkdownOutputWriterTest {
   }
 
   @Test
+  void anonymousRootRendersItsSingleChildAsARecord() {
+    Node root = new Node("");
+    root.addNode(person("1", "Alice"));
+
+    String output = MarkdownOutputWriter.map(new Hierarchy(root));
+
+    assertEquals(3, output.lines().count());
+    assertTrue(output.contains("Alice"));
+  }
+
+  @Test
   void repeatedObjectsExpandIntoReadableRows() {
     Node root = new Node("person");
     root.addNode(valueNode("id", "1"));

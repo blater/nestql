@@ -9,6 +9,8 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.stream.IntStream;
 
 /*
  * Responsibility: Owns one open JDBC Statement and ResultSet and exposes
@@ -59,6 +61,12 @@ public final class SqlRowCursor implements AutoCloseable {
       Log.fatal(SQLException.class, "Could not get column count. " + ex.getMessage());
       return -1;
     }
+  }
+
+  public List<String> columnLabels() {
+    return IntStream.rangeClosed(1, columnCount())
+        .mapToObj(this::columnLabel)
+        .toList();
   }
 
   public String columnLabel(int index) {

@@ -27,13 +27,16 @@ public final class MarkdownOutputWriter implements OutputWriter {
 
   public static String map(Hierarchy hierarchy) {
     Node root = hierarchy == null ? null : hierarchy.getRoot();
-    if (root == null || root.getName() == null || root.getName().isEmpty()) {
+    if (root == null || root.getName() == null) {
       return "";
     }
 
     List<Map<String, String>> rows = new ArrayList<>();
     Set<String> columns = new LinkedHashSet<>();
-    for (Node record : recordNodes(root)) {
+    List<Node> records = hierarchy.getRootKind() == Hierarchy.RootKind.SYNTHETIC_ARRAY
+        ? root.getChildren()
+        : recordNodes(root);
+    for (Node record : records) {
       List<Map<String, String>> recordRows = flattenNode(record, "");
       rows.addAll(recordRows);
       recordRows.forEach(row -> columns.addAll(row.keySet()));
@@ -48,6 +51,9 @@ public final class MarkdownOutputWriter implements OutputWriter {
     Map<String, List<Node>> children = groupedChildren(root);
     if (children.size() == 1) {
       List<Node> onlyChildGroup = children.values().iterator().next();
+      if (onlyChildGroup.size() == 1 && onlyChildGroup.getFirst().isCollection()) {
+        return onlyChildGroup.getFirst().getChildren();
+      }
       if (onlyChildGroup.size() > 1) {
         return onlyChildGroup;
       }

@@ -21,16 +21,16 @@ class RowFirstStructureE2ETest {
           "insert into company values (1, 'Acme')",
           "insert into company values (2, 'Blair Ltd')");
 
-      Element companies = runScript(database, ScriptParser.parse(
+      Element result = runScript(database, ScriptParser.parse(
           """
               select id into {companies.company.id}, name into {companies.company.name}
               from company order by id
               \\g
               """));
 
-      assertEquals(2, companies.getChildren("company").size());
-      assertChildText(companies.getChildren("company").get(0), "name", "Acme");
-      assertChildText(companies.getChildren("company").get(1), "name", "Blair Ltd");
+      assertEquals(2, result.getChildren("companies").size());
+      assertChildText(child(result.getChildren("companies").get(0), "company"), "name", "Acme");
+      assertChildText(child(result.getChildren("companies").get(1), "company"), "name", "Blair Ltd");
     }
   }
 

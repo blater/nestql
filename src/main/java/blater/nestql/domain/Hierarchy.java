@@ -26,6 +26,12 @@ import static blater.nestql.domain.Node.isNull;
  *
  */
 public class Hierarchy {
+  public enum RootKind {
+    NAMED,
+    SYNTHETIC_OBJECT,
+    SYNTHETIC_ARRAY
+  }
+
   /*
    * activeObjects records the latest Node opened or created for a path.
    * example:
@@ -39,6 +45,7 @@ public class Hierarchy {
   @Getter // getRoot() is used by XmlOutputWriter to write output doc. Set by register();
   private Node root;
   @Getter private String namespace;
+  @Getter private RootKind rootKind = RootKind.NAMED;
 
   private MappingPlan plan;
 
@@ -47,6 +54,14 @@ public class Hierarchy {
 
   public Hierarchy(Node root) {
     this.root = root;
+    if (root != null && "".equals(root.getName())) {
+      rootKind = RootKind.SYNTHETIC_ARRAY;
+    }
+  }
+
+  public Hierarchy(Node root, RootKind rootKind) {
+    this.root = root;
+    this.rootKind = Objects.requireNonNull(rootKind);
   }
 
   public boolean hasNamespace() {
@@ -66,10 +81,24 @@ public class Hierarchy {
     }
 
     if (this.root == null) {
-      // create root
       String rootName = stmt.getPlan().rootName() != null ? stmt.getPlan().rootName() : "";
-      root = new Node(rootName);
-      activePathEntries.put(HierarchyPath.fromDottedPath(rootName), root);
+      HierarchyPath rootPath = HierarchyPath.fromDottedPath(rootName);
+      KeyedPath repeatedRoot = repeatedPath(rootPath);
+      boolean flatRows = flatRows();
+      boolean anonymousCollection = plan.getKeyedPaths().stream()
+          .anyMatch(key -> key.inferred() && plan.repetitionPath(key) == null);
+      if (flatRows || anonymousCollection) {
+        root = new Node("");
+        rootKind = RootKind.SYNTHETIC_ARRAY;
+      } else if (repeatedRoot != null) {
+        root = new Node("");
+        rootKind = repeatedRoot.inferred() ? RootKind.SYNTHETIC_OBJECT : RootKind.SYNTHETIC_ARRAY;
+      } else {
+        root = new Node(rootName);
+        rootKind = RootKind.NAMED;
+        activePathEntries.put(rootPath, root);
+      }
+      initializeInferredCollections();
     }
     if (namespace == null)
       namespace = stmt.getNamespace();
@@ -93,6 +122,11 @@ public class Hierarchy {
       return false;
 
     RowContext rowContext = new RowContext();
+    Node flatRow = null;
+    if (flatRows()) {
+      flatRow = new Node("");
+      root.addNode(flatRow);
+    }
     for (OutputField field : plan.getFields()) {
       if (!evaluateFieldConditions(field, row))
         continue;
@@ -100,7 +134,9 @@ public class Hierarchy {
       if (nullValue && field.isAbsentOnNull())
         continue;
 
-      Node parent = resolveParent(field.getPath().parent(), row, rowContext);
+      Node parent = field.getPath().parent() == null && flatRow != null
+          ? flatRow
+          : resolveParent(field.getPath().parent(), row, rowContext);
       if (parent == null)
         continue;
       KeyedPath terminalKey = keyedPath(field.getPath());
@@ -122,25 +158,53 @@ public class Hierarchy {
   }
 
   private Node resolveParent(HierarchyPath path, QueryResultRow row, RowContext rowContext) {
-    if (path == null || path.isRoot())
+    if (path == null)
       return root;
 
     Node current = root;
-    HierarchyPath currentPath = HierarchyPath.fromDottedPath(path.getRootName());
-    for (int index = 1; index < path.getPathParts().size(); index++) {
-      currentPath = currentPath.child(path.getPathParts().get(index));
-      KeyedPath keyedPath = keyedPath(currentPath);
-      if (keyedPath != null) {
-        KeyState state = keyState(keyedPath, row);
+    HierarchyPath currentPath = null;
+    int start = 0;
+    if (rootKind == RootKind.NAMED) {
+      currentPath = HierarchyPath.fromDottedPath(path.getRootName());
+      start = 1;
+      if (path.isRoot()) return root;
+    }
+    for (int index = start; index < path.getPathParts().size(); index++) {
+      currentPath = currentPath == null
+          ? HierarchyPath.fromDottedPath(path.getPathParts().get(index))
+          : currentPath.child(path.getPathParts().get(index));
+      KeyedPath repeated = repeatedPath(currentPath);
+      if (repeated == null && rootKind == RootKind.SYNTHETIC_ARRAY) {
+        KeyedPath owner = keyedPath(currentPath);
+        if (owner != null && plan.repetitionPath(owner) == null) {
+          KeyState state = keyState(owner, row);
+          if (state == KeyState.ABSENT) return null;
+          Node item = state == KeyState.PARTIAL
+              ? rowContext.anonymousChild(root, owner.path())
+              : keyedAnonymousChild(root, owner.path(), keyTuple(owner, row));
+          current = singletonChild(item, currentPath);
+          continue;
+        }
+      }
+      if (repeated != null) {
+        KeyState state = keyState(repeated, row);
         if (state == KeyState.ABSENT)
           return null;
-        if (state == KeyState.PARTIAL && !keyedPath.inferred())
+        if (state == KeyState.PARTIAL && !repeated.inferred())
           throw new IllegalStateException("Partially null structure key: " + currentPath);
-        if (state == KeyState.PARTIAL) {
+        if (isInferredCollectionKey(repeated)) {
+          Node collection = singletonChild(current, currentPath);
+          collection.setCollection(true);
+          current = state == KeyState.PARTIAL
+              ? rowContext.anonymousChild(collection, repeated.path())
+              : keyedAnonymousChild(collection, repeated.path(), keyTuple(repeated, row));
+        } else if (state == KeyState.PARTIAL) {
           current = rowContext.objectChild(current, currentPath);
         } else {
-          current = keyedChild(current, currentPath, keyTuple(keyedPath, row));
+          current = keyedChild(current, currentPath, keyTuple(repeated, row));
         }
+      } else if (isInferredOwner(currentPath)) {
+        current = singletonChild(current, currentPath);
       } else if (isObjectPath(currentPath)) {
         current = rowContext.objectChild(current, currentPath);
       } else {
@@ -156,6 +220,57 @@ public class Hierarchy {
         return keyedPath;
     }
     return null;
+  }
+
+  private KeyedPath repeatedPath(HierarchyPath path) {
+    for (KeyedPath keyedPath : plan.getKeyedPaths()) {
+      if (path.equals(plan.repetitionPath(keyedPath))) return keyedPath;
+    }
+    return null;
+  }
+
+  private boolean isInferredOwner(HierarchyPath path) {
+    KeyedPath key = keyedPath(path);
+    return key != null && key.inferred() && !path.equals(plan.repetitionPath(key));
+  }
+
+  private boolean flatRows() {
+    return !plan.getFields().isEmpty()
+        && plan.getFields().stream().allMatch(field -> field.getPath().getPathParts().size() == 1);
+  }
+
+  private boolean isInferredCollectionKey(KeyedPath key) {
+    return key.inferred() && !Objects.equals(key.path(), plan.repetitionPath(key));
+  }
+
+  private void initializeInferredCollections() {
+    for (KeyedPath key : plan.getKeyedPaths()) {
+      if (!isInferredCollectionKey(key)) continue;
+      HierarchyPath collectionPath = plan.repetitionPath(key);
+      if (collectionPath == null) {
+        root.setCollection(true);
+      } else {
+        collectionNode(collectionPath).setCollection(true);
+      }
+    }
+  }
+
+  private Node collectionNode(HierarchyPath path) {
+    Node current = root;
+    int start = 0;
+    HierarchyPath currentPath = null;
+    if (rootKind == RootKind.NAMED) {
+      currentPath = HierarchyPath.fromDottedPath(path.getRootName());
+      start = 1;
+      if (path.isRoot()) return root;
+    }
+    for (int index = start; index < path.getPathParts().size(); index++) {
+      currentPath = currentPath == null
+          ? HierarchyPath.fromDottedPath(path.getPathParts().get(index))
+          : currentPath.child(path.getPathParts().get(index));
+      current = singletonChild(current, currentPath);
+    }
+    return current;
   }
 
   private boolean isObjectPath(HierarchyPath path) {
@@ -183,6 +298,15 @@ public class Hierarchy {
     ChildBucket bucket = persistentBucket(parent, path);
     return bucket.keyed.computeIfAbsent(key, ignored -> {
       Node child = new Node(path.getTerminalNodeName());
+      parent.addNode(child);
+      return child;
+    });
+  }
+
+  private Node keyedAnonymousChild(Node parent, HierarchyPath path, KeyTuple key) {
+    ChildBucket bucket = persistentBucket(parent, path);
+    return bucket.keyed.computeIfAbsent(key, ignored -> {
+      Node child = new Node("");
       parent.addNode(child);
       return child;
     });
@@ -334,6 +458,15 @@ public class Hierarchy {
       return objects.computeIfAbsent(parent, ignored -> new HashMap<>())
           .computeIfAbsent(path, ignored -> {
             Node child = new Node(path.getTerminalNodeName());
+            parent.addNode(child);
+            return child;
+          });
+    }
+
+    Node anonymousChild(Node parent, HierarchyPath path) {
+      return objects.computeIfAbsent(parent, ignored -> new HashMap<>())
+          .computeIfAbsent(path, ignored -> {
+            Node child = new Node("");
             parent.addNode(child);
             return child;
           });

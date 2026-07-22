@@ -27,6 +27,8 @@ public final class Node {
   private boolean attribute = false;
   // Marks nodes expanded from source collection items until cache loading moves to streaming events.
   private boolean arrayItem = false;
+  // Marks an output container whose children are anonymous collection items.
+  private boolean collection = false;
   @Setter(AccessLevel.NONE)
   @ToString.Exclude
   @EqualsAndHashCode.Exclude
