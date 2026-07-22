@@ -84,7 +84,9 @@ public final class Help {
           A script may be a filename or inline script text. Supply an input file
           for mapped DML, or combine it with --cache to query the file through a
           persistent local H2 database. With no input or JDBC connection, the
-          script queries the active cache.
+          script queries the active cache. DQL structure keys are inferred from
+          database metadata unless --no-key-inference is supplied. Use --debug
+          to log the inferred relationships selected for each query to stderr.
 
       EXAMPLES
           nestql report.nql -p database.properties
@@ -306,6 +308,21 @@ public final class Help {
 
           --output type, -o type
               Write xml, json, yaml, csv, or markdown output.
+
+          --debug
+              Log inference decisions and other diagnostic details to stderr.
+
+          --no-key-inference
+              Disable automatic DQL structure-key inference and preserve
+              row-first output for paths without explicit structure keys.
+
+          --metadata-refresh
+              Rebuild cached database key and relationship metadata for the
+              selected JDBC or input-cache target, then exit.
+
+          --metadata-expiry-hours hours
+              Persist the selected target's metadata expiry. Zero refreshes
+              metadata on every use; the default is 24 hours.
 
           --cache
               Load, select, or query a persistent local H2 cache. An explicit

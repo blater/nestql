@@ -2,6 +2,7 @@ package blater.nestql.domain;
 
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.domain.QueryResultRow;
+import blater.nestql.util.Log;
 import lombok.Getter;
 
 import java.math.BigDecimal;
@@ -33,6 +34,7 @@ public class Hierarchy {
    */
   private final Map<HierarchyPath, Node> activePathEntries = new HashMap<>();
   private final IdentityHashMap<Node, Map<HierarchyPath, ChildBucket>> persistentChildren = new IdentityHashMap<>();
+  private final Set<HierarchyPath> warnedInferredConflictPaths = new HashSet<>();
 
   @Getter // getRoot() is used by XmlOutputWriter to write output doc. Set by register();
   private Node root;
@@ -106,10 +108,12 @@ public class Hierarchy {
         KeyState state = keyState(terminalKey, row);
         if (state == KeyState.ABSENT)
           continue;
-        if (state == KeyState.PARTIAL)
+        if (state == KeyState.PARTIAL && !terminalKey.inferred())
           throw new IllegalStateException("Partially null structure key: " + field.getPath());
+        if (state == KeyState.PARTIAL)
+          continue;
         writeTerminalKeyedValue(keyedChild(parent, field.getPath(), keyTuple(terminalKey, row)), field,
-            row.getStringValue(field.getSourceColumn()), nullValue);
+            row.getStringValue(field.getSourceColumn()), nullValue, terminalKey);
         continue;
       }
       writeResolvedValue(parent, field, row.getStringValue(field.getSourceColumn()), nullValue);
@@ -130,9 +134,13 @@ public class Hierarchy {
         KeyState state = keyState(keyedPath, row);
         if (state == KeyState.ABSENT)
           return null;
-        if (state == KeyState.PARTIAL)
+        if (state == KeyState.PARTIAL && !keyedPath.inferred())
           throw new IllegalStateException("Partially null structure key: " + currentPath);
-        current = keyedChild(current, currentPath, keyTuple(keyedPath, row));
+        if (state == KeyState.PARTIAL) {
+          current = rowContext.objectChild(current, currentPath);
+        } else {
+          current = keyedChild(current, currentPath, keyTuple(keyedPath, row));
+        }
       } else if (isObjectPath(currentPath)) {
         current = rowContext.objectChild(current, currentPath);
       } else {
@@ -262,10 +270,20 @@ public class Hierarchy {
     Node existing = parent.getChildren().get(existingIndex);
     if (existing.isNull() == nullValue && Objects.equals(existing.getValue(), value))
       return;
+    KeyedPath inferredKey = nearestKeyedPath(field.getPath().parent());
+    if (inferredKey != null && inferredKey.inferred()) {
+      warnInferredConflict(field.getPath(), inferredKey);
+      return;
+    }
     throw new IllegalStateException("Conflicting values for output path: " + field.getPath());
   }
 
-  private void writeTerminalKeyedValue(Node target, OutputField field, String value, boolean nullValue) {
+  private void writeTerminalKeyedValue(
+      Node target,
+      OutputField field,
+      String value,
+      boolean nullValue,
+      KeyedPath keyedPath) {
     if (field.getAppendText() != null) {
       if (nullValue)
         throw new IllegalStateException("append mapping requires absent on null for path: " + field.getPath());
@@ -285,7 +303,28 @@ public class Hierarchy {
     }
     if (target.isNull() == nullValue && Objects.equals(target.getValue(), value))
       return;
+    if (keyedPath.inferred()) {
+      warnInferredConflict(field.getPath(), keyedPath);
+      return;
+    }
     throw new IllegalStateException("Conflicting values for output path: " + field.getPath());
+  }
+
+  private KeyedPath nearestKeyedPath(HierarchyPath path) {
+    HierarchyPath current = path;
+    while (current != null) {
+      KeyedPath keyedPath = keyedPath(current);
+      if (keyedPath != null) return keyedPath;
+      current = current.parent();
+    }
+    return null;
+  }
+
+  private void warnInferredConflict(HierarchyPath valuePath, KeyedPath keyedPath) {
+    if (!warnedInferredConflictPaths.add(keyedPath.path())) return;
+    Log.warn(
+        "Inferred structure key [{}] coalesced conflicting value [{}]; keeping the first value. Possible data loss.",
+        keyedPath.sourceColumns(), String.join(".", valuePath.getPathParts()));
   }
 
   private final class RowContext {

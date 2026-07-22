@@ -12,11 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class JsonOutputWriterTest {
   @Test
-  void factoryReturnsJsonOutputWriter() {
-    assertInstanceOf(JsonOutputWriter.class, OutputWriter.of(OutputType.JSON));
-  }
-
-  @Test
   void mapsSimpleHierarchyAsJsonObject() {
     Node root = new Node("people");
     Node person = new Node("person");

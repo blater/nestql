@@ -71,6 +71,10 @@ public final class SqlExecutor {
     return context.columnNames(tableName);
   }
 
+  public Connection connection() {
+    return context.connection();
+  }
+
   public Hierarchy catalog(String tablePattern) {
     return Catalog.read(context.connection(), tablePattern);
   }

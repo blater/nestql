@@ -323,6 +323,25 @@ class HierarchyCacheLoaderTest {
   }
 
   @Test
+  void quotesOffsetColumnBecauseItIsAnH2Keyword() throws Exception {
+    try (H2Database database = new H2Database()) {
+      SqlExecutor executor = new SqlExecutor(database.jdbcProperties());
+      try {
+        Node data = new Node("data");
+        Node positive = new Node("positive");
+        positive.addNode(value("offset", "1"));
+        data.addNode(positive);
+
+        new HierarchyCacheLoader(executor).load(new Hierarchy(data));
+
+        assertEquals("1", database.queryString("select \"offset\" from positive"));
+      } finally {
+        executor.close();
+      }
+    }
+  }
+
+  @Test
   void renderedIdentifierCollisionsFailClearly() throws Exception {
     try (H2Database database = new H2Database()) {
       SqlExecutor executor = new SqlExecutor(database.jdbcProperties());

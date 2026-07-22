@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 public final class Catalog {
   private static final Set<String> USER_TABLE_TYPES = Set.of("TABLE", "BASE TABLE");
   private static final Set<String> SYSTEM_NAMES = Set.of(
-      "CTXSYS", "DBSNMP", "INFORMATION_SCHEMA", "MDSYS", "MYSQL", "OUTLN", "PERFORMANCE_SCHEMA", "PG_CATALOG",
+      "CTXSYS", "DBSNMP", "INFORMATION_SCHEMA", "MDSYS", "MYSQL", "NESTQL_INTERNAL", "OUTLN", "PERFORMANCE_SCHEMA", "PG_CATALOG",
       "PG_TOAST", "SYS", "SYSCAT", "SYSFUN", "SYSIBM", "SYSIBMADM", "SYSPROC", "SYSSTAT", "SYSTEM",
       "SYSTEM_LOBS", "XDB");
 
@@ -117,23 +117,16 @@ public final class Catalog {
         .matches();
   }
 
-  private static boolean isUserSchema(String catalog, String schema) {
-    return !isSystemName(catalog) && !isSystemName(schema);
+  public static boolean isUserSchema(String catalog, String schema) {
+    return isNotSystemName(catalog) && isNotSystemName(schema);
   }
 
-  private static boolean isSystemName(String name) {
+  private static boolean isNotSystemName(String name) {
     if (name == null || name.isBlank()) {
-      return false;
+      return true;
     }
-    String normalized = normalize(name);
-    return SYSTEM_NAMES.contains(normalized)
-        || normalized.startsWith("SYS_");
-  }
-
-  private static void addOptionalValue(Node parent, String name, String value) {
-    if (value != null && !value.isBlank()) {
-      addValue(parent, name, value);
-    }
+    String ucName = name.trim().toUpperCase();
+    return !SYSTEM_NAMES.contains(ucName) && !ucName.startsWith("SYS_");
   }
 
   private static void addValue(Node parent, String name, String value) {
@@ -142,9 +135,6 @@ public final class Catalog {
     parent.addNode(child);
   }
 
-  private static String normalize(String value) {
-    return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-  }
 
   private static String exactPattern(String value, String searchEscape) {
     if (value == null || searchEscape == null || searchEscape.isEmpty()) {

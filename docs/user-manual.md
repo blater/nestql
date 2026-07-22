@@ -326,6 +326,10 @@ With explicit `--cache`, an input file selects its cache. Without an input file,
 | `--jdbc-username username` | Set the exact `jdbc.username` value. |
 | `--jdbc-password password` | Set the exact `jdbc.password` value. |
 | `--output type`, `-o type` | Write output as `xml`, `json`, `csv`, `yaml`, or `markdown`. |
+| `--debug`                  | Log each query's inferred output-path, relation, key, and parent relationship decisions to stderr. |
+| `--no-key-inference`       | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
+| `--metadata-refresh`       | Rebuild cached key and relationship metadata for the selected target, then exit. |
+| `--metadata-expiry-hours hours` | Persist metadata expiry for the selected target; zero refreshes every use. |
 | `--cache`                  | Load, select, or query a local cache; explicit cache mode overrides JDBC settings. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
 | `--clear-cache`            | Clear all caches, or one cache if followed by an input file. |
@@ -806,7 +810,7 @@ select name as personName into {person.name} from person;
 
 ### `structure`
 
-Without a `structure` key, mapped object paths below the document wrapper are materialized once per SQL result row. This preserves row multiplicity without guessing how rows should be grouped.
+Without a `structure` key, nestQL uses JDBC metadata to infer primary, unique, composite, conventional, and logical keys for mapped object paths. Required key columns are projected internally and never appear in output. Inference uses metadata only; it never samples query rows.
 
 ```sql
 select
@@ -816,11 +820,13 @@ from company
 order by id;
 ```
 
-This produces one `company` object per row. Add a key where joined rows should contribute to the same output object:
+Rows with the same inferred company key contribute to one object. Add an explicit key to override inference for that exact hierarchy path:
 
 ```sql
 structure {companies.company} key (id)
 ```
+
+The explicit tuple is complete and authoritative for `{companies.company}`. Inference cannot add to or replace it, but remains available for undeclared sibling and descendant paths, even when they use the same table or alias. Use `--no-key-inference` to disable inference for the entire query.
 
 Keys are typed tuples. Use a comma-separated list for a composite identity:
 

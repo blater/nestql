@@ -3,12 +3,9 @@ package blater.nestql.parser;
 import blater.nestql.core.parser.HiQLLexer;
 import blater.nestql.core.parser.HiQLParser;
 import blater.nestql.domain.HierarchyPath;
-import blater.nestql.parser.script.NestStatement;
-import blater.nestql.domain.KeyedPath;
-import blater.nestql.domain.CorrelationRule;
-import blater.nestql.domain.MappingCondition;
 import blater.nestql.domain.MappingPlan;
-import blater.nestql.domain.OutputField;
+import blater.nestql.parser.script.NestStatement;
+import blater.nestql.parser.script.SelectBlueprint;
 import blater.nestql.util.Log;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
@@ -17,9 +14,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static blater.nestql.util.ValueUtil.hasValue;
 
@@ -28,9 +23,6 @@ import static blater.nestql.util.ValueUtil.hasValue;
  * SQL text, hierarchy mappings, property capture, and XML hints.
  */
 final class SelectBuilder {
-
-  private static final String SELECT_BRANCH_COLUMN = "hiql_select_branch";
-  private static final String SELECT_BRANCH_VALUE_PREFIX = "select_branch_";
 
   private SelectBuilder() {
   }
@@ -61,39 +53,25 @@ final class SelectBuilder {
     List<OrderItem> orderItems = readOrderItems(ctx.orderByClause());
     List<StructureItem> structureItems = readStructureItems(ctx.structureClause(), branches);
     structureItems.addAll(readLegacyStructureItems(orderItems, structureItems));
-    List<InternalExpression> internalExpressions = internalExpressions(structureItems, orderItems);
+    SelectBlueprint blueprint = new SelectBlueprint(
+        branches.stream().map(SelectBuilder::toBlueprintBranch).toList(),
+        orderItems.stream().map(item -> new SelectBlueprint.OrderItem(
+            item.expression, item.direction, item.legacyPaths)).toList(),
+        structureItems.stream().map(item -> new SelectBlueprint.StructureKey(
+            item.path, item.keyExpressions, blater.nestql.domain.KeyOrigin.EXPLICIT)).toList());
+    SelectBlueprint.Compiled compiled = blueprint.compile(List.of());
+    return NestStatement.select(compiled.sql(), compiled.plan(), using.namespace, blueprint);
+  }
 
-    for (Branch branch : branches) {
-      for (InternalExpression internal : internalExpressions) {
-        boolean mapsKeyedPath = internal.path == null || branch.mapsPath(internal.path);
-        branch.internalItems.add(mapsKeyedPath ? branch.internalItemText(internal.expression) : "null");
-      }
-    }
-
-    List<Integer> nonKeyCounts = new ArrayList<>();
-    for (Branch branch : branches) {
-      nonKeyCounts.add(branch.emittedNonKeyColumnCount());
-    }
-    StringBuilder sql = new StringBuilder();
-    List<OutputField> fields = new ArrayList<>();
-    for (int idx = 0; idx < branches.size(); idx++) {
-      if (idx > 0) sql.append(" union all ");
-      emitBranchSql(sql, fields, branches.get(idx), idx, nonKeyCounts);
-    }
-    sql.append(genericOrderBy(orderItems, internalExpressions));
-
-    Map<String, String> internalColumns = new LinkedHashMap<>();
-    for (int idx = 0; idx < internalExpressions.size(); idx++) {
-      internalColumns.put(internalExpressions.get(idx).expression, "col" + (idx + 1));
-    }
-    List<KeyedPath> keyedPaths = new ArrayList<>();
-    for (StructureItem item : structureItems) {
-      List<String> columns = item.keyExpressions.stream().map(internalColumns::get).toList();
-      keyedPaths.add(new KeyedPath(item.path, columns));
-    }
-
-    MappingPlan plan = new MappingPlan(fields, legacyCorrelationRules(orderItems, internalExpressions), keyedPaths);
-    return NestStatement.select(sql.toString(), plan, using.namespace);
+  private static SelectBlueprint.Branch toBlueprintBranch(Branch branch) {
+    return new SelectBlueprint.Branch(
+        branch.items.stream().map(item -> new SelectBlueprint.SelectItem(
+            item.text,
+            item.name,
+            item.outputPath,
+            item.appendText,
+            item.absentOnNull)).toList(),
+        branch.sqlTail);
   }
 
 
@@ -206,103 +184,6 @@ final class SelectBuilder {
     return items;
   }
 
-  private static void emitBranchSql(
-      StringBuilder sql,
-      List<OutputField> fields,
-      Branch branch,
-      int branchIndex,
-      List<Integer> nonKeyCounts) {
-    String branchValue = SELECT_BRANCH_VALUE_PREFIX + branchIndex;
-    StringBuilder selectItems = new StringBuilder();
-    int rsColNum = 1;
-    int columnNum = 0;
-
-    for (String internalItem : branch.internalItems) {
-      appendItem(selectItems, rsColNum, internalItem);
-      rsColNum++;
-    }
-
-    for (int otherIdx = 0; otherIdx < nonKeyCounts.size(); otherIdx++) {
-      if (otherIdx == branchIndex) {
-        while (columnNum < branch.items.size()) {
-          SelectItem item = branch.items.get(columnNum++);
-          appendItem(selectItems, rsColNum, item.text);
-          recordOutputField(fields, branchValue, item, rsColNum);
-          rsColNum++;
-        }
-      } else {
-        int fillCount = nonKeyCounts.get(otherIdx);
-        for (int j = 0; j < fillCount; j++) {
-          appendItem(selectItems, rsColNum, "null");
-          rsColNum++;
-        }
-      }
-    }
-
-    selectItems.append(", '").append(branchValue).append("' as ").append(quoteAlias(SELECT_BRANCH_COLUMN));
-
-    sql.append("select ").append(selectItems);
-    if (branch.sqlTail != null && !branch.sqlTail.isEmpty()) {
-      sql.append(' ').append(branch.sqlTail);
-    }
-  }
-
-  private static void appendItem(StringBuilder buf, int rsColNum, String text) {
-    if (rsColNum > 1) buf.append(", ");
-    buf.append(text).append(" as ").append(quoteAlias("col" + rsColNum));
-  }
-
-  private static void recordOutputField(List<OutputField> fields, String branchValue, SelectItem item, int rsColNum)
-  {
-    if (item.outputPath == null)
-      return;
-
-    String column = "col" + rsColNum;
-    List<MappingCondition> conditions = new ArrayList<>();
-    conditions.add(MappingCondition.eq(SELECT_BRANCH_COLUMN, branchValue));
-    fields.add(new OutputField(item.outputPath, column, item.appendText, conditions, item.absentOnNull));
-  }
-
-  private static String genericOrderBy(List<OrderItem> orderItems, List<InternalExpression> internalExpressions) {
-    if (orderItems.isEmpty())
-      return "";
-
-    StringBuilder buf = new StringBuilder(" order by ");
-    for (int idx = 0; idx < orderItems.size(); idx++) {
-      if (idx > 0)
-        buf.append(", ");
-      OrderItem item = orderItems.get(idx);
-      int expressionIndex = indexOfExpression(internalExpressions, item.expression);
-      buf.append(quoteAlias("col" + (expressionIndex + 1)));
-      String direction = item.direction;
-      if (direction != null)
-        buf.append(' ').append(direction);
-    }
-    return buf.toString();
-  }
-
-  private static int indexOfExpression(List<InternalExpression> expressions, String expression) {
-    for (int idx = 0; idx < expressions.size(); idx++) {
-      if (expressions.get(idx).expression.equals(expression))
-        return idx;
-    }
-    throw new IllegalStateException("Missing internal expression: " + expression);
-  }
-
-  private static List<InternalExpression> internalExpressions(
-      List<StructureItem> structureItems, List<OrderItem> orderItems) {
-    Map<String, InternalExpression> expressions = new LinkedHashMap<>();
-    for (StructureItem item : structureItems) {
-      for (String expression : item.keyExpressions) {
-        expressions.putIfAbsent(expression, new InternalExpression(expression, item.path));
-      }
-    }
-    for (OrderItem item : orderItems) {
-      expressions.putIfAbsent(item.expression, new InternalExpression(item.expression, null));
-    }
-    return new ArrayList<>(expressions.values());
-  }
-
   private static List<StructureItem> readStructureItems(
       HiQLParser.StructureClauseContext ctx, List<Branch> branches) {
     List<StructureItem> items = new ArrayList<>();
@@ -342,22 +223,6 @@ final class SelectBuilder {
       }
     }
     return items;
-  }
-
-  private static List<CorrelationRule> legacyCorrelationRules(
-      List<OrderItem> orderItems, List<InternalExpression> internalExpressions) {
-    List<CorrelationRule> rules = new ArrayList<>();
-    for (OrderItem item : orderItems) {
-      for (HierarchyPath path : item.legacyPaths) {
-        String column = "col" + (indexOfExpression(internalExpressions, item.expression) + 1);
-        rules.add(new CorrelationRule(path, List.of(MappingCondition.newValue(column))));
-      }
-    }
-    return rules;
-  }
-
-  private static String quoteAlias(String alias) {
-    return "\"" + alias + "\"";
   }
 
   private static List<Token> tokensIn(ParserRuleContext ctx) {
@@ -418,33 +283,16 @@ final class SelectBuilder {
    */
   private static final class Branch {
     final List<SelectItem> items = new ArrayList<>();
-    final List<String> internalItems = new ArrayList<>();
     String sqlTail;
-
-    int emittedNonKeyColumnCount() {
-      return items.size();
-    }
 
     boolean hasHierarchyFields() {
       return items.stream().anyMatch(item -> item.outputPath != null);
-    }
-
-    boolean mapsPath(HierarchyPath path) {
-      return items.stream().anyMatch(item -> item.outputPath != null
-          && (item.outputPath.equals(path) || item.outputPath.isBelow(path)));
     }
 
     boolean mapsExactPath(HierarchyPath path) {
       return items.stream().anyMatch(item -> path.equals(item.outputPath));
     }
 
-    String internalItemText(String expression) {
-      for (SelectItem item : items) {
-        if (expression.equalsIgnoreCase(item.name) || expression.equalsIgnoreCase(item.text))
-          return item.text;
-      }
-      return expression;
-    }
   }
 
   /*
@@ -498,6 +346,4 @@ final class SelectBuilder {
   private record StructureItem(HierarchyPath path, List<String> keyExpressions) {
   }
 
-  private record InternalExpression(String expression, HierarchyPath path) {
-  }
 }

@@ -2,6 +2,8 @@ package blater.nestql.runner.sql.cache;
 
 import blater.nestql.ParameterParser;
 import blater.nestql.inputreader.InputType;
+import blater.nestql.inference.KeyInference;
+import blater.nestql.runner.sql.SqlExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -239,6 +241,64 @@ class PersistentCacheTest {
     assertEquals(Duration.ofMinutes(30), PersistentCache.parseDuration("30m"));
     assertEquals(Duration.ofHours(6), PersistentCache.parseDuration("6hours"));
     assertEquals(Duration.ofDays(2), PersistentCache.parseDuration("2days"));
+  }
+
+  @Test
+  void storesDatabaseStructureArtifactsThroughTheExistingCacheLifecycle() {
+    Map<String, String> params = cacheParams();
+    byte[] payload = {1, 2, 3, 4};
+
+    PersistentCache.writeArtifact(
+        "database-test",
+        "url=jdbc:test\n",
+        "Test database",
+        1,
+        24,
+        payload,
+        params);
+
+    CachedArtifact cached = PersistentCache.readArtifact(
+        "database-test", "url=jdbc:test\n", params).orElseThrow();
+    assertEquals(1, cached.version());
+    assertEquals(24, cached.expiryHours());
+    assertTrue(java.util.Arrays.equals(payload, cached.payload()));
+    assertEquals("DATABASE_STRUCTURE", PersistentCache.listCaches(params).getFirst().inputType());
+
+    PersistentCache.setArtifactExpiry("database-test", "url=jdbc:test\n", 0, params);
+    assertEquals(0, PersistentCache.readArtifact(
+        "database-test", "url=jdbc:test\n", params).orElseThrow().expiryHours());
+    assertEquals(1, PersistentCache.clearAll(params));
+  }
+
+  @Test
+  void inputCacheStoresItsDatabaseStructureInTheSameH2Database() throws Exception {
+    Map<String, String> params = cacheParams();
+    CacheHandle handle = preparedCache(write("input.json", "{}"), params);
+    try (var connection = DriverManager.getConnection(handle.jdbcUrl(), "sa", "");
+         var statement = connection.createStatement()) {
+      statement.execute("create table item (id integer primary key)");
+    }
+    Map<String, String> jdbc = Map.of(
+        ParameterParser.JDBC_CLASS_NAME_PARAM, "org.h2.Driver",
+        ParameterParser.JDBC_DATABASE_PARAM, handle.jdbcUrl(),
+        ParameterParser.JDBC_USERNAME_PARAM, "sa",
+        ParameterParser.JDBC_PASSWORD_PARAM, "",
+        ParameterParser.CACHE_DIR_PARAM, PersistentCache.cacheRoot(params).toString());
+
+    SqlExecutor executor = new SqlExecutor(jdbc);
+    try {
+      KeyInference.refresh(executor, jdbc);
+    } finally {
+      executor.close();
+    }
+
+    assertEquals(1, cacheDirectoryCount(params));
+    try (var connection = DriverManager.getConnection(handle.jdbcUrl(), "sa", "");
+         var result = connection.createStatement().executeQuery(
+             "select count(*) from nestql_internal.cache_artifact")) {
+      result.next();
+      assertEquals(1, result.getInt(1));
+    }
   }
 
   private CacheHandle preparedCache(Path input, Map<String, String> params) throws Exception {

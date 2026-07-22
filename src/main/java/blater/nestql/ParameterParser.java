@@ -32,6 +32,10 @@ public final class ParameterParser {
 
   public static final String JDBC_PROPS_FILE_PARAM = "NSQL_JDBC_PROPS_FILE";
   public static final String OUTPUT_TYPE_PARAM = "NSQL_OUTPUT_TYPE";
+  public static final String DEBUG_PARAM = "NSQL_DEBUG";
+  public static final String NO_KEY_INFERENCE_PARAM = "NSQL_NO_KEY_INFERENCE";
+  public static final String METADATA_REFRESH_PARAM = "NSQL_METADATA_REFRESH";
+  public static final String METADATA_EXPIRY_HOURS_PARAM = "NSQL_METADATA_EXPIRY_HOURS";
   public static final String CACHE_MODE_PARAM = "NSQL_CACHE";
   public static final String PARQUET_ROOT_PARAM = "NSQL_PARQUET_ROOT";
   public static final String PARQUET_RECORD_PARAM = "NSQL_PARQUET_RECORD";
@@ -104,6 +108,31 @@ public final class ParameterParser {
         case "--output", "-o" -> i = putValue(
             commandParameters, OUTPUT_TYPE_PARAM,
             args, i, attachedValue, "no output type supplied");
+
+        case "--debug" -> {
+          requireNoAttachedValue(argument, attachedValue);
+          commandParameters.put(DEBUG_PARAM, "true");
+        }
+        case "--no-key-inference" -> {
+          requireNoAttachedValue(argument, attachedValue);
+          commandParameters.put(NO_KEY_INFERENCE_PARAM, "true");
+        }
+        case "--metadata-refresh" -> {
+          requireNoAttachedValue(argument, attachedValue);
+          commandParameters.put(METADATA_REFRESH_PARAM, "true");
+        }
+        case "--metadata-expiry-hours" -> {
+          String value = requiredValue(
+              args, i, attachedValue, "no metadata expiry supplied");
+          i = nextIndex(i, attachedValue);
+          try {
+            if (Long.parseLong(value) < 0) throw new NumberFormatException();
+          } catch (NumberFormatException ex) {
+            Log.fatal(IllegalArgumentException.class,
+                "--metadata-expiry-hours requires a non-negative whole number.");
+          }
+          commandParameters.put(METADATA_EXPIRY_HOURS_PARAM, value);
+        }
 
         case "--db" -> {
           databaseType = requiredValue(args, i, attachedValue, "no value supplied for --db");
@@ -386,6 +415,10 @@ public final class ParameterParser {
         || key.equals(INPUT_FILENAME)
         || key.equals(JDBC_PROPS_FILE_PARAM)
         || key.equals(OUTPUT_TYPE_PARAM)
+        || key.equals(DEBUG_PARAM)
+        || key.equals(NO_KEY_INFERENCE_PARAM)
+        || key.equals(METADATA_REFRESH_PARAM)
+        || key.equals(METADATA_EXPIRY_HOURS_PARAM)
         || key.equals(CACHE_MODE_PARAM)
         || key.equals(CACHE_DIR_PARAM)
         || key.equals(CACHE_CLEAR_ALL_PARAM)
@@ -430,6 +463,17 @@ public final class ParameterParser {
   }
 
   private static void resolvePositionals(Map<String, String> params, List<String> positionArguments) {
+    if (params.containsKey(METADATA_REFRESH_PARAM)
+        || params.containsKey(METADATA_EXPIRY_HOURS_PARAM)) {
+      if (positionArguments.size() == 1
+          && Boolean.parseBoolean(params.get(CACHE_MODE_PARAM))
+          && isInputFile(positionArguments.getFirst())) {
+        params.put(INPUT_FILENAME, positionArguments.getFirst());
+      } else if (!positionArguments.isEmpty()) {
+        Log.fatal(IllegalArgumentException.class, "Unexpected argument: " + positionArguments.getFirst());
+      }
+      return;
+    }
     if ( params.containsKey(CACHE_LIST_PARAM)
       || params.containsKey(CACHE_CLEAR_TARGET_PARAM)
       || params.containsKey(CACHE_CLEAR_ALL_PARAM)

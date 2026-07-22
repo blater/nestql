@@ -19,7 +19,8 @@ set street = {customers.person.addressline1},
 where personid = {customers.person.id};
 ```
 
-The SQL extension `structure {path.to.object} key (...)` tells nestQL which rows contribute to the same output object:
+nestQL normally infers keys and relationships from database metadata. The SQL extension
+`structure {path.to.object} key (...)` explicitly tells nestQL which rows contribute to the same output object:
 ```sql
 output json;                                    -- create json output
 select personid into {people.person.id},     -- the persons id goes into people.person.id in the JSON
@@ -213,6 +214,10 @@ Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`,
 | `--jdbc-password PASSWORD` | Set the exact `jdbc.password` value. |
 | `--output TYPE`, `-o TYPE` | Select `xml`, `json`, `csv`, `yaml`, or `markdown` output. |
 | `--output=TYPE` | Equals-form of `--output TYPE`. |
+| `--debug` | Log each query's inferred output-path, relation, key, and parent relationship decisions to stderr. |
+| `--no-key-inference` | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
+| `--metadata-refresh` | Rebuild cached key and relationship metadata for the selected target, then exit. |
+| `--metadata-expiry-hours HOURS` | Persist metadata expiry for the selected target; zero refreshes every use. |
 | `--cache` | Load or select an input file's persistent local H2 cache. With no input, query the active cache. Explicit cache mode overrides JDBC settings. |
 | `--cache-dir PATH` | Store query caches under `PATH` instead of `~/.nestql/cache`. |
 | `--cache-dir=PATH` | Equals-form of `--cache-dir PATH`. |

@@ -43,6 +43,7 @@ public final class HierarchyCacheLoader {
       "LEFT",
       "NOT",
       "NULL",
+      "OFFSET",
       "ON",
       "OR",
       "ORDER",

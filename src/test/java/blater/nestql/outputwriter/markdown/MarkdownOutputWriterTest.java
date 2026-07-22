@@ -14,11 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MarkdownOutputWriterTest {
   @Test
-  void factoryReturnsMarkdownOutputWriter() {
-    assertInstanceOf(MarkdownOutputWriter.class, OutputWriter.of(OutputType.MARKDOWN));
-  }
-
-  @Test
   void repeatedRootChildrenRenderAsRowsWithStableColumns() {
     Node root = new Node("people");
     Node alice = person("1", "A");

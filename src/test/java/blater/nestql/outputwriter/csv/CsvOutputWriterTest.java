@@ -12,11 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class CsvOutputWriterTest {
   @Test
-  void factoryReturnsCsvOutputWriter() {
-    assertInstanceOf(CsvOutputWriter.class, OutputWriter.of(OutputType.CSV));
-  }
-
-  @Test
   void repeatedRootChildrenRenderAsCsvRecords() {
     Node root = new Node("people");
     root.addNode(person("1", "Alice"));

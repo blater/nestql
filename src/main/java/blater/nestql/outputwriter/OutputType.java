@@ -1,6 +1,7 @@
 package blater.nestql.outputwriter;
 
 import blater.nestql.ParameterParser;
+import blater.nestql.domain.Hierarchy;
 import blater.nestql.parser.script.NestScript;
 
 import java.util.Map;
@@ -15,19 +16,19 @@ public enum OutputType {
   CSV(new CsvOutputWriter()),
   MARKDOWN(new MarkdownOutputWriter())
   ;
-
   final static OutputType DEFAULT_OUTPUT_TYPE = JSON;
+
   final OutputWriter outputWriter;
 
   OutputType(OutputWriter outputWriter) {
     this.outputWriter = outputWriter;
   }
 
-  OutputWriter writer() {
-    return outputWriter;
+  public void write(Hierarchy res) {
+    outputWriter.write(res);
   }
 
-  public static OutputType outputTypeFor(NestScript script, Map<String, String> params) {
+  public static OutputType get(NestScript script, Map<String, String> params) {
     String cliOutputType = params.get(ParameterParser.OUTPUT_TYPE_PARAM);
     if (cliOutputType != null) {
       return OutputType.fromName(cliOutputType);

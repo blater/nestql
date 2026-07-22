@@ -19,6 +19,7 @@ public class NestStatement {
   private List<InputToColumnMap> mappings = null;
   private List<ReturnMapping> returnMappings = null;
   private final MappingPlan plan;
+  private final SelectBlueprint selectBlueprint;
   private final String namespace;
   private final String catalogPattern;
   private ErrorStrategy errorHandling = new ErrorStrategy(FAIL, FAIL);
@@ -26,10 +27,16 @@ public class NestStatement {
   /**
    * SELECTS, includes mappings
    */
-  private NestStatement(NestSqlStatementType type, String sql, MappingPlan plan, String namespace) {
+  private NestStatement(
+      NestSqlStatementType type,
+      String sql,
+      MappingPlan plan,
+      String namespace,
+      SelectBlueprint selectBlueprint) {
     this.type = type;
     this.sql = sql;
     this.plan = plan;
+    this.selectBlueprint = selectBlueprint;
     this.namespace = namespace;
     this.catalogPattern = null;
   }
@@ -46,6 +53,7 @@ public class NestStatement {
     this.mappings = mappings;
     this.returnMappings = returnMappings;
     this.plan = null;
+    this.selectBlueprint = null;
     this.namespace = null;
     this.catalogPattern = null;
   }
@@ -54,6 +62,7 @@ public class NestStatement {
     this.type = NestSqlStatementType.CATALOG;
     this.sql = null;
     this.plan = null;
+    this.selectBlueprint = null;
     this.namespace = null;
     this.catalogPattern = catalogPattern;
   }
@@ -71,7 +80,19 @@ public class NestStatement {
 
   // SELECT query whose rows project into an output hierarchy.
   public static NestStatement select(String sql, MappingPlan plan, String namespace) {
-    return new NestStatement(SELECT, sql, plan, namespace);
+    return new NestStatement(SELECT, sql, plan, namespace, null);
+  }
+
+  public static NestStatement select(
+      String sql,
+      MappingPlan plan,
+      String namespace,
+      SelectBlueprint selectBlueprint) {
+    return new NestStatement(SELECT, sql, plan, namespace, selectBlueprint);
+  }
+
+  public NestStatement compiledSelect(String compiledSql, MappingPlan compiledPlan) {
+    return new NestStatement(SELECT, compiledSql, compiledPlan, namespace, selectBlueprint);
   }
 
   public static NestStatement catalog(String tablePattern) {

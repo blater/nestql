@@ -1,6 +1,7 @@
 package blater.nestql.runner.sql.query;
 
 import blater.nestql.domain.Hierarchy;
+import blater.nestql.inference.KeyInference;
 import blater.nestql.parser.script.NestStatement;
 import blater.nestql.runner.sql.SqlExecutor;
 import blater.nestql.runner.sql.SqlRowCursor;
@@ -15,9 +16,10 @@ public class RunQuery {
     if (outputHierarchy == null)
       outputHierarchy = new Hierarchy();
 
-    outputHierarchy.register(stmt);
+    NestStatement executable = KeyInference.compile(stmt, parameters, sqlExecutor);
+    outputHierarchy.register(executable);
 
-    String querySql = Template.expand(stmt.getSql(), parameters);
+    String querySql = Template.expand(executable.getSql(), parameters);
     try (SqlRowCursor cursor = sqlExecutor.query(querySql)) {
       while (cursor.next()) {
         outputHierarchy.readRow(cursor.row());

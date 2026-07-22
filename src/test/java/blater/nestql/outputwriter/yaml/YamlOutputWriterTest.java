@@ -12,11 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class YamlOutputWriterTest {
   @Test
-  void factoryReturnsYamlOutputWriter() {
-    assertInstanceOf(YamlOutputWriter.class, OutputWriter.of(OutputType.YAML));
-  }
-
-  @Test
   void mapsSimpleHierarchyAsYamlMapping() {
     Node root = new Node("people");
     Node person = new Node("person");

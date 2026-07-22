@@ -17,10 +17,10 @@ class OutputTypeTest {
 
     assertEquals(
         OutputType.MARKDOWN,
-        OutputType.outputTypeFor(
+        OutputType.get(
             catalogScript,
             Map.of(ParameterParser.CATALOG_PATTERN_PARAM, "")));
-    assertEquals(OutputType.JSON, OutputType.outputTypeFor(catalogScript, Map.of()));
+    assertEquals(OutputType.JSON, OutputType.get(catalogScript, Map.of()));
   }
 
   @Test
@@ -31,7 +31,7 @@ class OutputTypeTest {
         ParameterParser.CATALOG_PATTERN_PARAM, "",
         ParameterParser.OUTPUT_TYPE_PARAM, "json");
 
-    assertEquals(OutputType.YAML, OutputType.outputTypeFor(yamlScript, catalog));
-    assertEquals(OutputType.JSON, OutputType.outputTypeFor(yamlScript, commandLineJson));
+    assertEquals(OutputType.YAML, OutputType.get(yamlScript, catalog));
+    assertEquals(OutputType.JSON, OutputType.get(yamlScript, commandLineJson));
   }
 }

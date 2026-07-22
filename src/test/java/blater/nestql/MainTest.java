@@ -144,6 +144,340 @@ class MainTest {
   }
 
   @Test
+  void noKeyInferenceFlagPreservesOneObjectPerResultRow() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table item (id integer, label varchar(80))",
+          "insert into item values (1, 'first')",
+          "insert into item values (1, 'second')");
+    }
+    Path script = write("unstructured-query.nql", """
+        output json;
+        select id into {result.item.id}, label into {result.item.label}
+        from item order by label;
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(), "--no-key-inference"));
+
+    assertEquals("""
+        {"result":{"item":[{"id":"1","label":"first"},{"id":"1","label":"second"}]}}
+        """, output);
+  }
+
+  @Test
+  void infersPrimaryKeysForNestedDqlOutput() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table customer (id integer primary key, name varchar(80))",
+          "create table purchase (id integer primary key, customer_id integer not null, item varchar(80), "
+              + "foreign key (customer_id) references customer(id))",
+          "insert into customer values (1, 'Fred')",
+          "insert into purchase values (10, 1, 'Tea')",
+          "insert into purchase values (11, 1, 'Cake')");
+    }
+    Path script = write("inferred-query.nql", """
+        output json;
+        select
+          c.id into {result.customer.id},
+          c.name into {result.customer.name},
+          p.id into {result.customer.purchase.id},
+          p.item into {result.customer.purchase.item}
+        from customer c
+        join purchase p on p.customer_id = c.id
+        order by p.id;
+        """);
+
+    String output = captureStdout(() -> Main.main(script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("metadata-cache").toString()));
+
+    assertEquals("""
+        {"result":{"customer":{"id":"1","name":"Fred","purchase":[{"id":"10","item":"Tea"},{"id":"11","item":"Cake"}]}}}
+        """, output);
+  }
+
+  @Test
+  void debugLogsOnlyTheInferredRelationshipsUsedByTheQuery() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table customer (id integer primary key, name varchar(80))",
+          "create table purchase (id integer primary key, customer_id integer not null, item varchar(80), "
+              + "foreign key (customer_id) references customer(id))",
+          "insert into customer values (1, 'Fred')",
+          "insert into purchase values (10, 1, 'Tea')");
+    }
+    Path script = write("debug-inference.nql", """
+        output json;
+        select
+          c.id into {result.customer.id},
+          c.name into {result.customer.name},
+          p.id into {result.customer.purchase.id},
+          p.item into {result.customer.purchase.item}
+        from customer c
+        join purchase p on p.customer_id = c.id;
+        """);
+    Path cache = tempDir.resolve("debug-metadata-cache");
+
+    String normal = captureStderr(() -> captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(), "--cache-dir", cache.toString())));
+    String debug;
+    try {
+      debug = captureStderr(() -> captureStdout(() -> Main.main(
+          script.toString(), "-p", properties.toString(), "--cache-dir", cache.toString(), "--debug")));
+    } finally {
+      blater.nestql.util.Log.debug(false);
+    }
+
+    assertFalse(normal.contains("Inferred DQL structure relationships used"));
+    assertTrue(debug.contains("Inferred DQL structure relationships used"));
+    assertTrue(debug.contains("{result.customer} -> c"));
+    assertTrue(debug.contains("key (ID) [PRIMARY_KEY]"));
+    assertTrue(debug.contains("{result.customer.purchase} -> p"));
+    assertTrue(debug.contains("[DECLARED_FOREIGN_KEY]"));
+  }
+
+  @Test
+  void explicitStructureOverridesInferenceOnlyForItsExactPath() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table customer (id integer primary key, group_code varchar(20), name varchar(80))",
+          "create table purchase (id integer primary key, customer_id integer not null, item varchar(80), "
+              + "foreign key (customer_id) references customer(id))",
+          "insert into customer values (1, 'G', 'Shared')",
+          "insert into customer values (2, 'G', 'Shared')",
+          "insert into purchase values (10, 1, 'Tea')",
+          "insert into purchase values (11, 2, 'Cake')");
+    }
+    Path script = write("partial-structure.nql", """
+        output json;
+        select
+          c.group_code into {result.customer.code},
+          c.name into {result.customer.name},
+          p.id into {result.customer.purchase.id},
+          p.item into {result.customer.purchase.item}
+        from customer c
+        join purchase p on p.customer_id = c.id
+        order by p.id
+        structure {result.customer} key (c.group_code);
+        """);
+
+    String output = captureStdout(() -> Main.main(script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("partial-cache").toString()));
+
+    assertEquals("""
+        {"result":{"customer":{"code":"G","name":"Shared","purchase":[{"id":"10","item":"Tea"},{"id":"11","item":"Cake"}]}}}
+        """, output);
+  }
+
+  @Test
+  void inferredKeyConflictKeepsFirstValueAndWarnsAboutPossibleDataLoss() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table item (id integer, label varchar(80))",
+          "insert into item values (1, 'first')",
+          "insert into item values (1, 'second')");
+    }
+    Path script = write("ambiguous-data.nql", """
+        output json;
+        select id into {result.item.id}, label into {result.item.label}
+        from item order by label;
+        """);
+    String[] output = new String[1];
+
+    String warnings = captureStderr(() -> output[0] = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("warning-cache").toString())));
+
+    assertEquals("""
+        {"result":{"item":{"id":"1","label":"first"}}}
+        """, output[0]);
+    assertTrue(warnings.toLowerCase().contains("possible data loss"));
+    assertTrue(warnings.contains("result.item.label"));
+  }
+
+  @Test
+  void metadataRefreshAndExpiryCommandsUseTheSelectedTargetAndExit() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection, "create table item (id integer primary key)");
+    }
+    Path cache = tempDir.resolve("metadata-command-cache");
+
+    String refreshed = captureStdout(() -> Main.main(
+        "-p", properties.toString(), "--cache-dir", cache.toString(), "--metadata-refresh"));
+    String configured = captureStdout(() -> Main.main(
+        "-p", properties.toString(), "--cache-dir", cache.toString(), "--metadata-expiry-hours", "0"));
+
+    assertTrue(refreshed.contains("Refreshed database key metadata"));
+    assertTrue(configured.contains("expiry set to 0"));
+    try (var directories = Files.list(cache)) {
+      assertEquals(1, directories.filter(Files::isDirectory).count());
+    }
+  }
+
+  @Test
+  void staleReferencedKeyMetadataRefreshesBeforeTheNextQuery() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table item (code varchar(20), label varchar(80))",
+          "create table tag (id integer primary key, item_code varchar(20))",
+          "insert into item values ('A', 'Alpha')",
+          "insert into tag values (1, 'A')",
+          "insert into tag values (2, 'A')");
+    }
+    Path script = write("stale-metadata.nql", """
+        output json;
+        select i.code into {result.item.code}, i.label into {result.item.label}
+        from item i join tag t on t.item_code = i.code order by t.id;
+        """);
+    Path cache = tempDir.resolve("stale-cache");
+
+    String before = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(), "--cache-dir", cache.toString()));
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection, "create unique index uq_item_code on item(code)");
+    }
+    String after = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(), "--cache-dir", cache.toString()));
+
+    assertEquals("""
+        {"result":{"item":[{"code":"A","label":"Alpha"},{"code":"A","label":"Alpha"}]}}
+        """, before);
+    assertEquals("""
+        {"result":{"item":{"code":"A","label":"Alpha"}}}
+        """, after);
+  }
+
+  @Test
+  void inferredKeysCollapseIndependentJoinedCollectionsWithoutCartesianDuplicates() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table parent (id integer primary key, name varchar(80))",
+          "create table note (id integer primary key, parent_id integer, text varchar(80))",
+          "create table tag (id integer primary key, parent_id integer, text varchar(80))",
+          "insert into parent values (1, 'P')",
+          "insert into note values (10, 1, 'N1')",
+          "insert into note values (11, 1, 'N2')",
+          "insert into tag values (20, 1, 'T1')",
+          "insert into tag values (21, 1, 'T2')");
+    }
+    Path script = write("independent-children.nql", """
+        output json;
+        select
+          p.id into {result.parent.id}, p.name into {result.parent.name},
+          n.id into {result.parent.note.id}, n.text into {result.parent.note.text},
+          t.id into {result.parent.tag.id}, t.text into {result.parent.tag.text}
+        from parent p
+        join note n on n.parent_id = p.id
+        join tag t on t.parent_id = p.id
+        order by n.id, t.id;
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("sibling-cache").toString()));
+
+    assertEquals("""
+        {"result":{"parent":{"id":"1","name":"P","note":[{"id":"10","text":"N1"},{"id":"11","text":"N2"}],"tag":[{"id":"20","text":"T1"},{"id":"21","text":"T2"}]}}}
+        """, output);
+  }
+
+  @Test
+  void partiallyNullInferredCompositeKeyFallsBackToRowLocalIdentity() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table item (part_a integer, part_b integer, label varchar(80), unique(part_a, part_b))",
+          "insert into item values (1, null, 'first')",
+          "insert into item values (1, null, 'second')");
+    }
+    Path script = write("partial-inferred-key.nql", """
+        output json;
+        select part_a into {result.item.a}, part_b into {result.item.b}, label into {result.item.label}
+        from item order by label;
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("partial-inferred-cache").toString()));
+
+    assertEquals("""
+        {"result":{"item":[{"a":"1","b":null,"label":"first"},{"a":"1","b":null,"label":"second"}]}}
+        """, output);
+  }
+
+  @Test
+  void groupedDqlUsesTheGroupingTupleInsteadOfTableKeys() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table sale (id integer primary key, category varchar(20), amount integer)",
+          "insert into sale values (1, 'A', 10)",
+          "insert into sale values (2, 'A', 20)",
+          "insert into sale values (3, 'B', 5)");
+    }
+    Path script = write("grouped-inference.nql", """
+        output json;
+        select category into {result.summary.category}, sum(amount) into {result.summary.total}
+        from sale group by category order by category;
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("grouped-cache").toString()));
+
+    assertEquals("""
+        {"result":{"summary":[{"category":"A","total":"30"},{"category":"B","total":"5"}]}}
+        """, output);
+  }
+
+  @Test
+  void hierarchyUnionUsesCompatibleBranchLocalInferredKeys() throws Exception {
+    String url = databaseUrl();
+    Path properties = propertiesFile(url);
+    try (Connection connection = DriverManager.getConnection(url, "sa", "")) {
+      execute(connection,
+          "create table person (id integer primary key, name varchar(80))",
+          "create table company (id integer primary key, name varchar(80))",
+          "insert into person values (1, 'Fred')",
+          "insert into company values (1, 'Acme')");
+    }
+    Path script = write("union-inference.nql", """
+        output json;
+        select p.id into {result.entry.id}, p.name into {result.entry.name}
+        from person p
+        hierarchy union
+        select c.id into {result.entry.id}, c.name into {result.entry.name}
+        from company c;
+        """);
+
+    String output = captureStdout(() -> Main.main(
+        script.toString(), "-p", properties.toString(),
+        "--cache-dir", tempDir.resolve("union-cache").toString()));
+
+    assertEquals("""
+        {"result":{"entry":[{"id":"1","name":"Fred"},{"id":"1","name":"Acme"}]}}
+        """, output);
+  }
+
+  @Test
   void markdownOutputCanBeSelectedByScriptOrCommandLine() throws Exception {
     String url = databaseUrl();
     Path properties = propertiesFile(url);
@@ -782,6 +1116,18 @@ class MainTest {
       runnable.run();
     } finally {
       System.setOut(original);
+    }
+    return output.toString(StandardCharsets.UTF_8);
+  }
+
+  private String captureStderr(ThrowingRunnable runnable) throws Exception {
+    PrintStream original = System.err;
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    try (PrintStream capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+      System.setErr(capture);
+      runnable.run();
+    } finally {
+      System.setErr(original);
     }
     return output.toString(StandardCharsets.UTF_8);
   }

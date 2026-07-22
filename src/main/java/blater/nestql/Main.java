@@ -1,7 +1,7 @@
 package blater.nestql;
 
 import blater.nestql.outputwriter.OutputType;
-import blater.nestql.outputwriter.OutputWriter;
+import blater.nestql.inference.KeyInference;
 import blater.nestql.parser.ScriptLoader;
 import blater.nestql.parser.ScriptParser;
 import blater.nestql.parser.script.NestScript;
@@ -10,6 +10,8 @@ import blater.nestql.runner.ScriptRunner;
 import blater.nestql.runner.sql.cache.CacheExecution;
 import blater.nestql.runner.sql.cache.CacheSource;
 import blater.nestql.runner.sql.cache.PersistentCache;
+import blater.nestql.runner.sql.SqlExecutor;
+import blater.nestql.util.Log;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import static blater.nestql.ParameterParser.*;
 public class Main {
   public static void main(String... args) throws Exception {
     var params = ParameterParser.parse(args);
+    Log.debug(Boolean.parseBoolean(params.get(DEBUG_PARAM)));
 
     if (params.containsKey(HELP_PARAM)) {
       String topic = params.get(HELP_PARAM);
@@ -37,6 +40,23 @@ public class Main {
                || params.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)
     ) {
       PersistentCache.clear(params);
+    } else if (params.containsKey(METADATA_REFRESH_PARAM)
+        || params.containsKey(METADATA_EXPIRY_HOURS_PARAM)) {
+      SqlExecutor executor = CacheExecution.openForQuery(params)
+          .orElseGet(() -> new SqlExecutor(params));
+      try {
+        if (params.containsKey(METADATA_REFRESH_PARAM)) {
+          KeyInference.refresh(executor, params);
+          System.out.println("Refreshed database key metadata.");
+        }
+        if (params.containsKey(METADATA_EXPIRY_HOURS_PARAM)) {
+          long hours = Long.parseLong(params.get(METADATA_EXPIRY_HOURS_PARAM));
+          KeyInference.configureExpiry(executor, params, hours);
+          System.out.println("Database key metadata expiry set to " + hours + " hour(s).");
+        }
+      } finally {
+        executor.close();
+      }
     } else if (params.containsKey(CATALOG_PATTERN_PARAM)) {
       String pattern = params.get(CATALOG_PATTERN_PARAM);
       NestScript script = new NestScript(List.of(NestStatement.catalog(pattern.isEmpty() ? null : pattern)));
@@ -57,6 +77,6 @@ public class Main {
   }
 
   private static void execute(NestScript script, Map<String, String> params) {
-    OutputWriter.of(OutputType.outputTypeFor(script, params)).write(ScriptRunner.run(script, params));
+    OutputType.get(script, params).write(ScriptRunner.run(script, params));
   }
 }

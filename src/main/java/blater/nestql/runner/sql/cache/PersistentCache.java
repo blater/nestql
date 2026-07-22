@@ -34,6 +34,7 @@ public final class PersistentCache {
   private static final int METADATA_ROW_ID = 1;
   private static final String ACTIVE_CACHE_ROOT = "active.cache.root";
   private static final String ACTIVE_CACHE_DIRECTORY = "active.cache.directory";
+  private static final int ARTIFACT_ROW_ID = 1;
 
   private PersistentCache() { }
 
@@ -88,6 +89,108 @@ public final class PersistentCache {
   public static void markLoaded(CacheHandle handle) {
     createDirectories(handle.cacheDir());
     writeMetadata(handle.cacheDir(), handle.source());
+  }
+
+  public static Optional<CachedArtifact> readArtifact(
+      String directoryName,
+      String identityText,
+      Map<String, String> params) {
+    Path cacheDir = artifactDirectory(directoryName, params);
+    if (!Files.exists(h2DatabaseFile(cacheDir))) return Optional.empty();
+    String sql = """
+        select payload, artifact_version, refreshed_millis, expiry_hours
+        from nestql_internal.cache_artifact
+        where id = ? and identity_text = ?
+        """;
+    try (Connection connection = connect(cacheDir, true);
+         PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setInt(1, ARTIFACT_ROW_ID);
+      statement.setString(2, identityText);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        if (!resultSet.next()) return Optional.empty();
+        return Optional.of(new CachedArtifact(
+            resultSet.getBytes("payload"),
+            resultSet.getInt("artifact_version"),
+            resultSet.getLong("refreshed_millis"),
+            resultSet.getLong("expiry_hours")));
+      }
+    } catch (SQLException ex) {
+      Log.debug("Could not read cached artifact [{}]: {}", cacheDir, ex.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  public static boolean writeArtifact(
+      String directoryName,
+      String identityText,
+      String displayName,
+      int version,
+      long expiryHours,
+      byte[] payload,
+      Map<String, String> params) {
+    Path cacheDir = artifactDirectory(directoryName, params);
+    try {
+      Files.createDirectories(cacheDir);
+    } catch (IOException ex) {
+      Log.warn("Could not create database-structure cache directory [{}]: {}", cacheDir, ex.getMessage());
+      return false;
+    }
+    try (Connection connection = connect(cacheDir, false)) {
+      connection.setAutoCommit(false);
+      try {
+        createMetadataTable(connection);
+        createArtifactTable(connection);
+        Optional<Metadata> existingMetadata = readMetadata(connection);
+        if (existingMetadata.isEmpty()
+            || "DATABASE_STRUCTURE".equals(existingMetadata.get().inputType())) {
+          writeArtifactMetadata(connection, identityText, displayName);
+        }
+        try (PreparedStatement delete = connection.prepareStatement(
+            "delete from nestql_internal.cache_artifact where id = ?")) {
+          delete.setInt(1, ARTIFACT_ROW_ID);
+          delete.executeUpdate();
+        }
+        try (PreparedStatement insert = connection.prepareStatement("""
+            insert into nestql_internal.cache_artifact (
+              id, identity_text, artifact_version, refreshed_millis, expiry_hours, payload
+            ) values (?, ?, ?, ?, ?, ?)
+            """)) {
+          insert.setInt(1, ARTIFACT_ROW_ID);
+          insert.setString(2, identityText);
+          insert.setInt(3, version);
+          insert.setLong(4, Instant.now().toEpochMilli());
+          insert.setLong(5, expiryHours);
+          insert.setBytes(6, payload);
+          insert.executeUpdate();
+        }
+        connection.commit();
+      } catch (SQLException ex) {
+        connection.rollback();
+        throw ex;
+      }
+      return true;
+    } catch (SQLException ex) {
+      Log.warn("Could not write cached database structure [{}]: {}", cacheDir, ex.getMessage());
+      return false;
+    }
+  }
+
+  public static void setArtifactExpiry(
+      String directoryName,
+      String identityText,
+      long expiryHours,
+      Map<String, String> params) {
+    Path cacheDir = artifactDirectory(directoryName, params);
+    try (Connection connection = connect(cacheDir, true);
+         PreparedStatement statement = connection.prepareStatement(
+             "update nestql_internal.cache_artifact set expiry_hours = ? where id = ? and identity_text = ?")) {
+      statement.setLong(1, expiryHours);
+      statement.setInt(2, ARTIFACT_ROW_ID);
+      statement.setString(3, identityText);
+      statement.executeUpdate();
+    } catch (SQLException ex) {
+      Log.warn("Could not update cached database structure expiry [{}]: {}", cacheDir, ex.getMessage());
+    }
   }
 
   public static void activate(CacheHandle handle) {
@@ -310,6 +413,69 @@ public final class PersistentCache {
             created_millis bigint not null
           )
           """);
+    }
+  }
+
+  private static void createArtifactTable(Connection connection) throws SQLException {
+    try (Statement statement = connection.createStatement()) {
+      statement.execute("create schema if not exists nestql_internal");
+      statement.execute("""
+          create table if not exists nestql_internal.cache_artifact (
+            id integer primary key,
+            identity_text varchar(65535) not null,
+            artifact_version integer not null,
+            refreshed_millis bigint not null,
+            expiry_hours bigint not null,
+            payload blob not null
+          )
+          """);
+    }
+  }
+
+  public static Optional<String> inputCacheStorageDirectory(Connection connection) {
+    try {
+      Optional<Metadata> metadata = readMetadata(connection);
+      if (metadata.isEmpty() || "DATABASE_STRUCTURE".equals(metadata.get().inputType())) {
+        return Optional.empty();
+      }
+      String url = connection.getMetaData().getURL();
+      String prefix = "jdbc:h2:file:";
+      if (url == null || !url.startsWith(prefix)) return Optional.empty();
+      String databasePath = url.substring(prefix.length());
+      int options = databasePath.indexOf(';');
+      if (options >= 0) databasePath = databasePath.substring(0, options);
+      Path file = Path.of(databasePath).toAbsolutePath().normalize();
+      Path directory = file.getParent();
+      return directory == null ? Optional.empty() : Optional.of(directory.toString());
+    } catch (SQLException | RuntimeException ex) {
+      return Optional.empty();
+    }
+  }
+
+  private static Path artifactDirectory(String directoryName, Map<String, String> params) {
+    Path requested = Path.of(directoryName);
+    return requested.isAbsolute() ? requested.normalize() : cacheRoot(params).resolve(requested).normalize();
+  }
+
+  private static void writeArtifactMetadata(
+      Connection connection,
+      String identityText,
+      String displayName) throws SQLException {
+    try (PreparedStatement delete = connection.prepareStatement("delete from cache_metadata where id = ?")) {
+      delete.setInt(1, METADATA_ROW_ID);
+      delete.executeUpdate();
+    }
+    try (PreparedStatement insert = connection.prepareStatement("""
+        insert into cache_metadata (
+          id, source_path, input_type, identity_text, created_millis
+        ) values (?, ?, ?, ?, ?)
+        """)) {
+      insert.setInt(1, METADATA_ROW_ID);
+      insert.setString(2, displayName);
+      insert.setString(3, "DATABASE_STRUCTURE");
+      insert.setString(4, identityText);
+      insert.setLong(5, Instant.now().toEpochMilli());
+      insert.executeUpdate();
     }
   }
 
