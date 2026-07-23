@@ -57,7 +57,8 @@ class MainTest {
       assertEquals(message, exception.getMessage());
     });
 
-    assertTrue(errors.contains("ERROR blater.nestql.util.Log - " + message));
+    assertTrue(errors.contains("ERROR - " + message));
+    assertFalse(errors.contains("blater.nestql.util.Log"));
     assertEquals(1, errors.split(java.util.regex.Pattern.quote(message), -1).length - 1);
   }
 

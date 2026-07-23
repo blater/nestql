@@ -10,6 +10,7 @@ import java.sql.SQLException;
  * Responsibility: Provides the project logging facade over SLF4J.
  */
 public class Log {
+  private static final String MESSAGE_PREFIX = "- ";
   private static final boolean THROW_FATAL_ERRORS = Boolean.getBoolean("nestql.debug");
   private static boolean isDebug;
 
@@ -20,11 +21,11 @@ public class Log {
   public static final Class<? extends Throwable> FATAL_SYNTAX_ERROR = HiqlSyntaxException.class;
 
   public static void debug(String msg, Object... args) {
-    if (isDebug) log.info("DEBUG: " + msg, args);
+    if (isDebug) log.info(MESSAGE_PREFIX + "DEBUG: " + msg, args);
   }
-  public static void info(String msg, Object... args) { log.info(msg, args); }
-  public static void warn(String msg, Object... args) { log.warn(msg, args); }
-  public static void error(String msg, Object... args) { log.error(msg, args); }
+  public static void info(String msg, Object... args) { log.info(MESSAGE_PREFIX + msg, args); }
+  public static void warn(String msg, Object... args) { log.warn(MESSAGE_PREFIX + msg, args); }
+  public static void error(String msg, Object... args) { log.error(MESSAGE_PREFIX + msg, args); }
 
   @SuppressWarnings("unchecked")
   private static <T extends Throwable> void sneakyThrow(Throwable t) throws T {
@@ -40,7 +41,7 @@ public class Log {
   }
 
   public static <R, T extends Throwable> R fatal(Class<T> type, String message) {
-    log.error(message);
+    log.error(MESSAGE_PREFIX + message);
     if (isDebug || THROW_FATAL_ERRORS) {
       T ex = createException(type, message, null);
       sneakyThrow(ex);
@@ -49,7 +50,7 @@ public class Log {
   }
 
   public static <R, T extends Throwable> R fatal(Class<T> type, String message, Throwable cause) {
-    log.error(message, cause);
+    log.error(MESSAGE_PREFIX + message, cause);
     if (isDebug || THROW_FATAL_ERRORS) {
       T ex = createException(type, message, cause);
       sneakyThrow(ex);
