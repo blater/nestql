@@ -108,7 +108,7 @@ final class DmlBuilder {
       List<HiQLParser.NameContext> names = parseCtx.nameList() == null ? List.of() : parseCtx.nameList().name();
       List<HiQLParser.DmlExprContext> values = parseCtx.dmlExprList().dmlExpr();
       if (!names.isEmpty() && names.size() != values.size()) {
-        throw new HiqlSyntaxException("INSERT column count does not match value count.");
+        fatal(FATAL_SYNTAX_ERROR, "INSERT column count does not match value count.");
       }
 
       List<InputToColumnMap> mappings = new ArrayList<>();
@@ -238,7 +238,10 @@ ReturnMapping
     String sourceExpression = null;
     boolean isLiteral = false;
 
-    // todo WTF? why is this a loop? why do we calculate and then throw away sourceExpression & isLiteral for every element??? can mappingItem actually contain multiple entries? if so what are they, are we missing things by throwing away the calculations??
+    // TODO why is this a loop?
+    //     why do we calculate and then throw away sourceExpression & isLiteral for every element?
+    //     can mappingItem actually contain multiple entries? if so what are they, are we missing things
+    //     by throwing away the calculations?
     for (HiQLParser.MappingItemContext item : parseCtx.mappingItem()) {
       if (item.STRING() != null) {
         sourceExpression = unquoteString(item.STRING().getText());
@@ -257,28 +260,15 @@ ReturnMapping
           case "xpathmapping" -> {
             sourceExpression = unquoteString(item.optVal().STRING().getText());
           }
-          default -> throw new HiqlSyntaxException("Unknown mapping option: " + operationFlag);
+          default -> sourceExpression = fatal(FATAL_SYNTAX_ERROR, "Unknown mapping option: " + operationFlag);
         }
       }
     }
 
     if (sourceExpression == null)
-      throw new HiqlSyntaxException("No source expression in mapping for column: " + sqlName);
+      fatal(FATAL_SYNTAX_ERROR, "No source expression in mapping for column: " + sqlName);
 
-    var columnDefinition = new ColumnDefinition(
-        sqlName,
-        SqlType.STRING /*type*/,
-        "" /*sqlFunction*/,
-        false /*key*/,
-        -99 /*keyNumber*/,
-        ColumnDataSourceType.NORMAL /* role */
-    );
-    return new InputToColumnMap(
-        columnDefinition,
-        sourceExpression,
-        null /*defaultValue*/,
-        isLiteral
-    );
+    return InputToColumnMap.newInstance(sqlName, sourceExpression, isLiteral);
   }
 
 
@@ -300,7 +290,7 @@ HierarchyPath
     List<HiQLParser.DmlSourceContext> sources = findDmlSources(expr);
     String text = ParseUtils.textOf(expr).trim();
     if (sources.size() > 1) {
-      throw new HiqlSyntaxException("DML expressions currently support one mapped source per column: " + text);
+      fatal(FATAL_SYNTAX_ERROR, "DML expressions currently support one mapped source per column: " + text);
     }
     if (sources.isEmpty()) {
       return literalExpressionMapping(sqlName, text, key);
@@ -329,7 +319,9 @@ HierarchyPath
         || expression.startsWith("${")) {
       sourceExpression = expression;
     } else {
-      throw new HiqlSyntaxException("DML expression must contain one mapped source or a literal value: " + expression);
+      sourceExpression = fatal(
+          FATAL_SYNTAX_ERROR,
+          "DML expression must contain one mapped source or a literal value: " + expression);
     }
     return new InputToColumnMap(
         new ColumnDefinition(sqlName, SqlType.STRING, "", key, key ? 1 : -99, ColumnDataSourceType.NORMAL),

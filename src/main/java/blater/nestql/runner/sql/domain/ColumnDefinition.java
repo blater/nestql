@@ -16,9 +16,11 @@ public record ColumnDefinition(
   int keyNumber,
   ColumnDataSourceType columnDataSourceType
 ) {
+  public static final int NOT_A_KEY = -99;
+
   public ColumnDefinition {
     columnDataSourceType = columnDataSourceType == null ? NORMAL : columnDataSourceType;
-    keyNumber = key ? keyNumber : -99;
+    keyNumber = key ? keyNumber : NOT_A_KEY;
     if (sqlType == null) {
       sqlType = SqlType.STRING;
     }

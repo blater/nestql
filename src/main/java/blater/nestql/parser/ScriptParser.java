@@ -20,8 +20,7 @@ import static blater.nestql.util.ValueUtil.has;
 public class ScriptParser {
 
   public static NestScript parse(String inputScript) {
-
-    var parser = init(inputScript);
+    HiQLParser parser = init(inputScript);
     var script = parser.script();
     var outputType = script.scriptItem().stream()
         .map(HiQLParser.ScriptItemContext::outputDirective)
@@ -39,8 +38,12 @@ public class ScriptParser {
 
   private static HiQLParser init(String input) {
     HiQLLexer lexer = new HiQLLexer(CharStreams.fromString(input));
+    SyntaxErrorListener errorListener = new SyntaxErrorListener();
+    lexer.removeErrorListeners();
+    lexer.addErrorListener(errorListener);
     HiQLParser parser = new HiQLParser(new CommonTokenStream(lexer));
-    parser.addErrorListener(new SyntaxErrorListener());
+    parser.removeErrorListeners();
+    parser.addErrorListener(errorListener);
     return parser;
   }
 

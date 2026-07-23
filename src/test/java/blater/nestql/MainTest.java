@@ -1,5 +1,6 @@
 package blater.nestql;
 
+import blater.nestql.parser.HiqlSyntaxException;
 import blater.nestql.testsupport.ParquetTestFiles;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.schema.MessageType;
@@ -43,6 +44,32 @@ class MainTest {
     Path missingLoadFile = tempDir.resolve("missing.xml");
 
     Main.main(script.toString(), missingLoadFile.toString(), "-p", properties.toString());
+  }
+
+  @Test
+  void parseErrorsAreReportedOnceThroughLog() throws Exception {
+    String message = "line 1:22 expected '\\g' or ';' at line end";
+
+    String errors = captureStderr(() -> {
+      HiqlSyntaxException exception = assertThrows(
+          HiqlSyntaxException.class,
+          () -> Main.main("select * from festival"));
+      assertEquals(message, exception.getMessage());
+    });
+
+    assertTrue(errors.contains("ERROR blater.nestql.util.Log - " + message));
+    assertEquals(1, errors.split(java.util.regex.Pattern.quote(message), -1).length - 1);
+  }
+
+  @Test
+  void parseErrorsUseHumanReadableKeywordNames() throws Exception {
+    HiqlSyntaxException exception = assertThrows(
+        HiqlSyntaxException.class,
+        () -> Main.main("update table menu using (insert);"));
+
+    assertEquals(
+        "line 1:13 unexpected 'menu'; expected 'from' or 'set'",
+        exception.getMessage());
   }
 
   @Test
