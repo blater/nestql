@@ -681,11 +681,21 @@ class MainTest {
     var target = ParameterParser.parse("--clear-cache", "input.json", "--cache-dir", tempDir.resolve("cache").toString());
     var older = ParameterParser.parse("--clear-cache-older-than", "30m", "--cache-dir", tempDir.resolve("cache").toString());
     var list = ParameterParser.parse("--list-caches", "--cache-dir", tempDir.resolve("cache").toString());
+    var use = ParameterParser.parse("--use-cache=input.json", "--cache-dir", tempDir.resolve("cache").toString());
 
     assertEquals("true", all.get(ParameterParser.CACHE_CLEAR_ALL_PARAM));
     assertEquals("input.json", target.get(ParameterParser.CACHE_CLEAR_TARGET_PARAM));
     assertEquals("30m", older.get(ParameterParser.CACHE_CLEAR_OLDER_THAN_PARAM));
     assertEquals("true", list.get(ParameterParser.CACHE_LIST_PARAM));
+    assertEquals("input.json", use.get(ParameterParser.CACHE_USE_PARAM));
+  }
+
+  @Test
+  void useCacheRequiresASourceAndRejectsOtherPositionals() {
+    assertThrows(IllegalArgumentException.class, () -> ParameterParser.parse("--use-cache"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> ParameterParser.parse("--use-cache", "input.json", "query.nql"));
   }
 
   @Test
@@ -821,6 +831,53 @@ class MainTest {
     assertEquals("""
         {"result":[{"customer":{"id":"C1"}}]}
         """, queryOutput);
+  }
+
+  @Test
+  void useCacheSwitchesToAnExistingCacheWithoutReadingItsSource() throws Exception {
+    Path cacheDir = tempDir.resolve("use-cache");
+    Path first = write("first-use.json", """
+        { "data": { "customer": [{ "id": "FIRST" }] } }
+        """);
+    Path second = write("second-use.json", """
+        { "data": { "customer": [{ "id": "SECOND" }] } }
+        """);
+    Path script = write("use-cache-query.nql", """
+        output json;
+        select c.id into {result.id} from customer c;
+        """);
+
+    Main.main("--cache-dir", cacheDir.toString(), "--cache", first.toString());
+    Main.main("--cache-dir", cacheDir.toString(), "--cache", second.toString());
+    Files.delete(first);
+
+    String switched = captureStdout(() -> Main.main(
+        "--use-cache", first.toString(), "--cache-dir", cacheDir.toString()));
+    String output = captureStdout(() -> Main.main(script.toString()));
+
+    assertEquals(
+        "Active cache set to " + first.toAbsolutePath().normalize() + System.lineSeparator(),
+        switched);
+    assertEquals("""
+        [{"result":{"id":"FIRST"}}]
+        """, output);
+  }
+
+  @Test
+  void useCacheDoesNotCreateAMissingCache() {
+    Path cacheDir = tempDir.resolve("missing-use-cache");
+    Path source = tempDir.resolve("not-cached.json");
+
+    IllegalArgumentException exception = assertThrows(
+        IllegalArgumentException.class,
+        () -> Main.main(
+            "--use-cache", source.toString(),
+            "--cache-dir", cacheDir.toString()));
+
+    assertEquals(
+        "No existing cache found for " + source.toAbsolutePath().normalize() + ".",
+        exception.getMessage());
+    assertFalse(Files.exists(cacheDir));
   }
 
   @Test

@@ -16,6 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PersistentCacheTest {
@@ -88,6 +89,34 @@ class PersistentCacheTest {
   }
 
   @Test
+  void clearsSpecificCacheByBareCacheFilename() throws Exception {
+    Map<String, String> params = cacheParams();
+    CacheHandle first = preparedCache(write("first.json", "{\"name\":\"Fred\"}"), params);
+    CacheHandle second = preparedCache(write("second.json", "{\"name\":\"Wilma\"}"), params);
+
+    int cleared = PersistentCache.clearForInput(
+        first.cacheFile().getFileName().toString(), params);
+
+    assertEquals(1, cleared);
+    assertFalse(Files.exists(first.cacheFile()));
+    assertTrue(Files.exists(second.cacheFile()));
+  }
+
+  @Test
+  void usesSpecificCacheByBareCacheFilename() throws Exception {
+    Map<String, String> params = cacheParams();
+    CacheHandle first = preparedCache(write("first.json", "{\"name\":\"Fred\"}"), params);
+    CacheHandle second = preparedCache(write("second.json", "{\"name\":\"Wilma\"}"), params);
+    PersistentCache.activate(second);
+
+    CacheHandle selected = PersistentCache.use(
+        first.cacheFile().getFileName().toString(), params);
+
+    assertEquals(first.cacheFile(), selected.cacheFile());
+    assertEquals(first.cacheFile(), PersistentCache.active().orElseThrow().cacheFile());
+  }
+
+  @Test
   void parquetRecordNamesCreateDistinctCacheVariantsForSameFile() throws Exception {
     Path input = write("customers.parquet", "not used by this test");
     Map<String, String> params = cacheParams();
@@ -97,6 +126,27 @@ class PersistentCacheTest {
     assertTrue(Files.exists(customer.cacheFile()));
     assertTrue(Files.exists(account.cacheFile()));
     assertFalse(customer.cacheFile().equals(account.cacheFile()));
+  }
+
+  @Test
+  void useCacheRequiresParquetVariantWhenAPathHasMultipleCaches() throws Exception {
+    Path input = write("customers.parquet", "not used by this test");
+    Map<String, String> params = cacheParams();
+    CacheHandle customer = preparedCache(parquetSource(input, "customer"), params);
+    preparedCache(parquetSource(input, "account"), params);
+
+    IllegalArgumentException exception = assertThrows(
+        IllegalArgumentException.class,
+        () -> PersistentCache.use(input.toString(), params));
+    CacheHandle selected = PersistentCache.use(
+        input.toString(),
+        Map.of(
+            ParameterParser.CACHE_DIR_PARAM, PersistentCache.cacheRoot(params).toString(),
+            ParameterParser.PARQUET_RECORD_PARAM, "customer"));
+
+    assertTrue(exception.getMessage().contains("specify --parquet-record"));
+    assertEquals(customer.cacheFile(), selected.cacheFile());
+    assertEquals(customer.cacheFile(), PersistentCache.active().orElseThrow().cacheFile());
   }
 
   @Test

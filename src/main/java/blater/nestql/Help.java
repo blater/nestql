@@ -6,8 +6,9 @@ public final class Help {
       Usage: nestql <script-file-or-text> [input-file] [name=value ...] [options]
              nestql catalog [table-pattern] [connection/cache options]
              nestql --cache <input-file> [--cache-dir path]
+             nestql --use-cache <input-file-or-cache-filename> [--cache-dir path]
              nestql --list-caches [--cache-dir path]
-             nestql --clear-cache [input-file] [--cache-dir path]
+             nestql --clear-cache [input-file-or-cache-filename] [--cache-dir path]
              nestql --clear-cache-older-than age [--cache-dir path]
              nestql -h | --help | --help <topic>
       """;
@@ -30,6 +31,7 @@ public final class Help {
           query          Run a script against a database or input-file cache.
           catalog        List tables or show details for matching tables.
           cache          Query an XML, JSON, YAML, CSV, or Parquet input file.
+          use-cache      Switch the active cache without loading an input file.
           clear-cache    Remove all caches, one input's caches, or old caches.
           list-caches    List persistent input-file caches.
           connection     Configure JDBC connections from options or properties.
@@ -40,6 +42,7 @@ public final class Help {
       EXAMPLES
           nestql --help query
           nestql --help connection
+          nestql --help use-cache
           nestql --help clear-cache
       """;
 
@@ -123,9 +126,34 @@ public final class Help {
           nestql totals.nql customers.json --cache --output json
 
       SEE ALSO
+          nestql --help use-cache
           nestql --help clear-cache
           nestql --help list-caches
           nestql --help parquet
+      """;
+
+  static final String USE_CACHE_CMD = """
+      USE-CACHE
+          Switch the active cache without loading or rebuilding it.
+
+      SYNOPSIS
+          nestql --use-cache <input-file-or-cache-filename> [--cache-dir path]
+
+      DESCRIPTION
+          Selects an existing cache by its source path or by a bare cache
+          filename. A bare cache filename is resolved in --cache-dir, or in
+          ~/.nestql/cache by default. The source file need not still exist. The
+          command fails if no matching cache exists and does not create one. If
+          multiple Parquet variants exist, use --parquet-record to select one.
+
+      EXAMPLES
+          nestql --use-cache customers.json
+          nestql --use-cache cache-0123456789abcdef.mv.db
+          nestql --use-cache customers.parquet --parquet-record customer
+
+      SEE ALSO
+          nestql --help cache
+          nestql --help list-caches
       """;
 
   static final String CLEAR_CACHE_CMD = """
@@ -134,18 +162,20 @@ public final class Help {
 
       SYNOPSIS
           nestql --clear-cache [--cache-dir path]
-          nestql --clear-cache <input-file> [--cache-dir path]
-          nestql --clear-cache=<input-file> [--cache-dir path]
+          nestql --clear-cache <input-file-or-cache-filename> [--cache-dir path]
+          nestql --clear-cache=<input-file-or-cache-filename> [--cache-dir path]
           nestql --clear-cache-older-than <age> [--cache-dir path]
 
       DESCRIPTION
-          With no input file, --clear-cache removes every cache. With an input
-          file, it removes every cache variant belonging to that source. Ages
-          accept minutes, hours, or days, including forms such as 30m, 6h, and 7d.
+          With no target, --clear-cache removes every cache. An input-file path
+          removes every cache variant belonging to that source. A bare cache
+          filename removes that file from --cache-dir, or ~/.nestql/cache by
+          default. Ages accept minutes, hours, or days, including 30m, 6h, and 7d.
 
       EXAMPLES
           nestql --clear-cache
           nestql --clear-cache customers.json
+          nestql --clear-cache cache-0123456789abcdef.mv.db
           nestql --clear-cache-older-than 7d
       """;
 
@@ -260,8 +290,9 @@ public final class Help {
           nestql <script-file-or-text> [input-file] [name=value ...] [options]
           nestql catalog [table-pattern] [connection/cache options]
           nestql --cache <input-file> [--cache-dir path]
+          nestql --use-cache <input-file-or-cache-filename> [--cache-dir path]
           nestql --list-caches [--cache-dir path]
-          nestql --clear-cache [input-file] [--cache-dir path]
+          nestql --clear-cache [input-file-or-cache-filename] [--cache-dir path]
           nestql --clear-cache-older-than age [--cache-dir path]
           nestql -h | --help | --help <topic>
 
@@ -328,14 +359,19 @@ public final class Help {
               Load, select, or query a persistent local H2 cache. An explicit
               cache takes precedence over JDBC settings.
 
+          --use-cache input-file-or-cache-filename
+              Make an existing input-file cache active without loading or
+              rebuilding it.
+
           --cache-dir path
               Store caches somewhere other than ~/.nestql/cache.
 
           --list-caches
               List persistent caches and their source files.
 
-          --clear-cache [input-file]
-              Clear all caches or every cache variant for one input file.
+          --clear-cache [input-file-or-cache-filename]
+              Clear all caches, every variant for one input file, or one named
+              cache file.
 
           --clear-cache-older-than age
               Clear caches older than an age such as 30m, 6h, or 7d.
@@ -357,6 +393,7 @@ public final class Help {
           nestql report.nql -p database.properties
           nestql update.nql customers.json -p database.properties region=EMEA
           nestql --cache customers.json
+          nestql --use-cache customers.json
           nestql catalog
           nestql catalog 'customer*' --output json
           nestql query.nql
@@ -381,6 +418,7 @@ public final class Help {
       case "query", "run" -> QUERY_CMD;
       case "catalog" -> CATALOG_CMD;
       case "cache" -> CACHE_CMD;
+      case "use-cache", "use" -> USE_CACHE_CMD;
       case "clear-cache", "clear" -> CLEAR_CACHE_CMD;
       case "list-caches", "list" -> LIST_CACHES_CMD;
       case "connection", "database", "db", "jdbc" -> CONNECTION_CMD;

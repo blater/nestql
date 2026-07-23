@@ -35,6 +35,9 @@ public class Main {
       }
     } else if (params.containsKey(CACHE_LIST_PARAM)) {
       PersistentCache.list(params);
+    } else if (params.containsKey(CACHE_USE_PARAM)) {
+      var handle = PersistentCache.use(params.get(CACHE_USE_PARAM), params);
+      System.out.println("Active cache set to " + handle.source().sourcePath());
     } else  if (params.containsKey(CACHE_CLEAR_TARGET_PARAM)
                || params.containsKey(CACHE_CLEAR_ALL_PARAM)
                || params.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)

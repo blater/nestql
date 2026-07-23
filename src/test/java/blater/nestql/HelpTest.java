@@ -49,6 +49,15 @@ class HelpTest {
   }
 
   @Test
+  void useCacheHelpExplainsThatItOnlySelectsExistingCaches() throws Exception {
+    String output = captureStdout(() -> Main.main("--help", "use-cache"));
+
+    assertTrue(output.startsWith("USE-CACHE\n"));
+    assertTrue(output.contains("nestql --use-cache <input-file-or-cache-filename>"));
+    assertTrue(output.contains("does not create one"));
+  }
+
+  @Test
   void equalsFormPrintsFocusedTopic() throws Exception {
     String output = captureStdout(() -> Main.main("--help=output"));
 

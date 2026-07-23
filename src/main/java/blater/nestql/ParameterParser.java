@@ -28,6 +28,7 @@ public final class ParameterParser {
   public static final String CACHE_CLEAR_TARGET_PARAM = "NSQL_CACHE_CLEAR_TARGET";
   public static final String CACHE_CLEAR_OLDER_THAN_PARAM = "NSQL_CACHE_CLEAR_OLDER_THAN";
   public static final String CACHE_LIST_PARAM = "NSQL_CACHE_LIST";
+  public static final String CACHE_USE_PARAM = "NSQL_CACHE_USE";
   public static final String CACHE_DIR_PARAM = "NSQL_CACHE_DIR";
 
   public static final String JDBC_PROPS_FILE_PARAM = "NSQL_JDBC_PROPS_FILE";
@@ -85,6 +86,9 @@ public final class ParameterParser {
           requireNoAttachedValue(argument, attachedValue);
           commandParameters.put(CACHE_LIST_PARAM, "true");
         }
+        case "--use-cache" -> i = putValue(
+            commandParameters, CACHE_USE_PARAM,
+            args, i, attachedValue, "no cache source supplied");
         case "--clear-cache" -> {
           if (attachedValue != null) {
             commandParameters.put(CACHE_CLEAR_TARGET_PARAM, attachedValue);
@@ -281,7 +285,8 @@ public final class ParameterParser {
         || parameters.containsKey(CACHE_CLEAR_ALL_PARAM)
         || parameters.containsKey(CACHE_CLEAR_TARGET_PARAM)
         || parameters.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)
-        || parameters.containsKey(CACHE_LIST_PARAM);
+        || parameters.containsKey(CACHE_LIST_PARAM)
+        || parameters.containsKey(CACHE_USE_PARAM);
   }
 
   private static void applySimpleConnection(
@@ -425,6 +430,7 @@ public final class ParameterParser {
         || key.equals(CACHE_CLEAR_TARGET_PARAM)
         || key.equals(CACHE_CLEAR_OLDER_THAN_PARAM)
         || key.equals(CACHE_LIST_PARAM)
+        || key.equals(CACHE_USE_PARAM)
         || key.equals(PARQUET_ROOT_PARAM)
         || key.equals(PARQUET_RECORD_PARAM));
   }
@@ -475,6 +481,7 @@ public final class ParameterParser {
       return;
     }
     if ( params.containsKey(CACHE_LIST_PARAM)
+      || params.containsKey(CACHE_USE_PARAM)
       || params.containsKey(CACHE_CLEAR_TARGET_PARAM)
       || params.containsKey(CACHE_CLEAR_ALL_PARAM)
       || params.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM))

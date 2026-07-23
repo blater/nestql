@@ -251,6 +251,7 @@ For simplicity, command examples from this point onward use the default `nestql`
 nestql script-file [load-file] [param=value ...] [-p properties-file] [--output type] [--cache]
 nestql catalog [table-pattern] [connection/cache options]
 nestql --cache load-file [--cache-dir path]
+nestql --use-cache load-file-or-cache-filename [--cache-dir path]
 ```
 
 Arguments can appear in any unambiguous order.
@@ -262,6 +263,7 @@ nestql --clear-cache
 nestql --clear-cache customers.json
 nestql --clear-cache-older-than 6h
 nestql --list-caches
+nestql --use-cache customers.json
 ```
 
 Standalone cache loading also does not require a script:
@@ -331,8 +333,9 @@ With explicit `--cache`, an input file selects its cache. Without an input file,
 | `--metadata-refresh`       | Rebuild cached key and relationship metadata for the selected target, then exit. |
 | `--metadata-expiry-hours hours` | Persist metadata expiry for the selected target; zero refreshes every use. |
 | `--cache`                  | Load, select, or query a local cache; explicit cache mode overrides JDBC settings. |
+| `--use-cache input-file-or-cache-filename` | Make an existing cache active without loading or rebuilding it. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
-| `--clear-cache`            | Clear all caches, or one cache if followed by an input file. |
+| `--clear-cache`            | Clear all caches, all variants for one input file, or one named cache file. |
 | `--clear-cache-older-than duration` | Clear caches not used within a duration such as `30m`, `6h`, or `7d`. |
 | `--list-caches`            | List known local query caches.                    |
 | `--parquet-root name`      | Override the Parquet hierarchy root name. Also supports `--parquet-root=name`. |
@@ -458,6 +461,21 @@ nestql totals.nql customers.json --cache --output json
 ```
 
 That cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. When `--cache` is absent, JDBC settings win over the active-cache fallback. Supplying an input file without `--cache` retains its mapped-DML meaning.
+
+To switch the active selection without running a query or loading the source
+file, use:
+
+```bash
+nestql --use-cache customers.json
+```
+
+`--use-cache` only selects an existing cache. Its argument can be the source
+path reported by `--list-caches` or a bare cache filename such as
+`cache-0123456789abcdef.mv.db`. A bare cache filename is resolved under
+`--cache-dir`, or under `~/.nestql/cache` by default. The source file need not
+still exist, and no cache is created or rebuilt when a match is missing. If the
+source has multiple Parquet cache variants, add the matching
+`--parquet-record` value.
 
 By default, cache files are stored under:
 
@@ -623,6 +641,12 @@ nestql --list-caches
 
 The listing shows input type, cache creation time, and source path. The active cache is marked with `*`. Cache metadata is stored inside each H2 cache database.
 
+Switch the active cache without loading or rebuilding it:
+
+```bash
+nestql --use-cache customers.json
+```
+
 Clear all caches:
 
 ```bash
@@ -634,6 +658,16 @@ Clear one input file's cache:
 ```bash
 nestql --clear-cache customers.json
 ```
+
+Clear one cache by its bare filename:
+
+```bash
+nestql --clear-cache cache-0123456789abcdef.mv.db
+```
+
+Bare cache filenames are resolved under `--cache-dir`, or under
+`~/.nestql/cache` by default. A source path continues to clear all variants for
+that source.
 
 Clear caches not used within a duration:
 

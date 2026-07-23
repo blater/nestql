@@ -195,6 +195,50 @@ public final class PersistentCache {
     writeConfig(config);
   }
 
+  public static CacheHandle use(String target, Map<String, String> params) {
+    Optional<Path> namedCacheFile = resolveCacheFilename(target, params);
+    if (namedCacheFile.isPresent()) {
+      Path cacheFile = namedCacheFile.get();
+      CacheHandle handle = readMetadata(cacheFile)
+          .map(metadata -> new CacheHandle(
+              cacheFile, jdbcUrl(cacheFile), false, metadata.source()))
+          .orElseGet(() -> Log.fatal(
+              IllegalArgumentException.class,
+              "No existing cache found at " + cacheFile + "."));
+      activate(handle);
+      return handle;
+    }
+
+    String sourcePath = CacheSource.normalizedSourcePath(target).toString();
+    boolean variantSpecified = params.containsKey(PARQUET_RECORD_PARAM);
+    CacheSource requested = CacheSource.from(target, params);
+
+    List<CacheHandle> matches = cacheFiles(params).stream()
+        .map(cacheFile -> readMetadata(cacheFile)
+            .filter(metadata -> sourcePath.equals(metadata.sourcePath()))
+            .filter(metadata -> !variantSpecified || requested.matches(metadata))
+            .map(metadata -> new CacheHandle(
+                cacheFile, jdbcUrl(cacheFile), false, metadata.source())))
+        .flatMap(Optional::stream)
+        .toList();
+
+    if (matches.isEmpty()) {
+      return Log.fatal(
+          IllegalArgumentException.class,
+          "No existing cache found for " + sourcePath + ".");
+    }
+    if (matches.size() > 1) {
+      return Log.fatal(
+          IllegalArgumentException.class,
+          "Multiple caches found for " + sourcePath
+              + "; specify --parquet-record to select one.");
+    }
+
+    CacheHandle handle = matches.getFirst();
+    activate(handle);
+    return handle;
+  }
+
   public static Optional<CacheHandle> active() {
     Optional<Path> configured = configuredActiveCacheFile();
     if (configured.isEmpty()) {
@@ -240,8 +284,19 @@ public final class PersistentCache {
         .toList();
   }
 
-  public static int clearForInput(String inputFilename, Map<String, String> params) {
-    String sourcePath = CacheSource.normalizedSourcePath(inputFilename).toString();
+  public static int clearForInput(String target, Map<String, String> params) {
+    Optional<Path> namedCacheFile = resolveCacheFilename(target, params);
+    if (namedCacheFile.isPresent()) {
+      Path cacheFile = namedCacheFile.get();
+      if (!isCacheFile(cacheFile)) {
+        return 0;
+      }
+      deleteCache(cacheFile);
+      clearActiveIfMissing();
+      return 1;
+    }
+
+    String sourcePath = CacheSource.normalizedSourcePath(target).toString();
     int cleared = 0;
     for (Path cacheFile : cacheFiles(params)) {
       if (readMetadata(cacheFile)
@@ -463,7 +518,24 @@ public final class PersistentCache {
   private static boolean isCacheFile(Path path) {
     String filename = path.getFileName().toString();
     return Files.isRegularFile(path)
-        && filename.startsWith(CACHE_FILE_PREFIX)
+        && isCacheFilename(filename);
+  }
+
+  private static Optional<Path> resolveCacheFilename(
+      String target,
+      Map<String, String> params) {
+    if (target == null || target.isBlank()) {
+      return Optional.empty();
+    }
+    Path path = Path.of(target);
+    if (path.getNameCount() != 1 || !isCacheFilename(path.toString())) {
+      return Optional.empty();
+    }
+    return Optional.of(cacheRoot(params).resolve(path).toAbsolutePath().normalize());
+  }
+
+  private static boolean isCacheFilename(String filename) {
+    return filename.startsWith(CACHE_FILE_PREFIX)
         && filename.endsWith(H2_DATABASE_SUFFIX);
   }
 
