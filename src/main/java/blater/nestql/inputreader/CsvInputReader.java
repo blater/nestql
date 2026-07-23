@@ -23,7 +23,7 @@ import static blater.nestql.util.ValueUtil.hasValue;
 
 public class CsvInputReader implements InputReader {
   private static final String ROOT = "csv";
-  private static final String ROW = "row";
+  private static final String ITEM = "item";
 
   @Override
   public Hierarchy load(String filename, Map<String, String> parameters) {
@@ -63,7 +63,7 @@ public class CsvInputReader implements InputReader {
       List<String> headers = parser.getHeaderNames();
       validateHeaders(headers);
       for (CSVRecord record : parser) {
-        root.addNode(rowNode(headers, record, parameters));
+        root.addNode(itemNode(headers, record, parameters));
       }
     }
     return new Hierarchy(root);
@@ -80,12 +80,12 @@ public class CsvInputReader implements InputReader {
     }
   }
 
-  private static Node rowNode(List<String> headers, CSVRecord record, Map<String, String> parameters) {
-    Node row = new Node(ROW);
+  private static Node itemNode(List<String> headers, CSVRecord record, Map<String, String> parameters) {
+    Node item = new Node(ITEM);
     for (String header : headers) {
-      addValue(row, pathParts(header), csvValue(record, header, parameters));
+      addValue(item, pathParts(header), csvValue(record, header, parameters));
     }
-    return row;
+    return item;
   }
 
   private static List<String> pathParts(String header) {

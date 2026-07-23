@@ -239,6 +239,28 @@ class HierarchyCacheLoaderTest {
   }
 
   @Test
+  void csvRecordsMaterializeAsItemTable() throws Exception {
+    Path input = tempDir.resolve("operations.csv");
+    Files.writeString(input, """
+        service,operation
+        accounts,lookup
+        """, StandardCharsets.UTF_8);
+
+    try (H2Database database = new H2Database()) {
+      SqlExecutor executor = new SqlExecutor(database.jdbcProperties());
+      try {
+        Hierarchy hierarchy = new CsvInputReader().load(input.toString(), Map.of());
+        new HierarchyCacheLoader(executor).load(hierarchy);
+
+        assertEquals("accounts", database.queryString("select service from item"));
+        assertEquals(0, tableCount(database, "row"));
+      } finally {
+        executor.close();
+      }
+    }
+  }
+
+  @Test
   void parquetDomainShapeCreatesNaturalCacheTables() throws Exception {
     MessageType schema = ParquetTestFiles.schema("""
         message customer {

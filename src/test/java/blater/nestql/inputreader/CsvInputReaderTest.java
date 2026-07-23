@@ -27,7 +27,7 @@ class CsvInputReaderTest {
   }
 
   @Test
-  void mapsSimpleCsvRowsToRepeatedRowHierarchyAndExpandsTemplates() throws Exception {
+  void mapsSimpleCsvRowsToRepeatedItemHierarchyAndExpandsTemplates() throws Exception {
     Path input = tempDir.resolve("people.csv");
     Files.writeString(input, """
         firstname,surname
@@ -39,13 +39,13 @@ class CsvInputReaderTest {
 
     Node root = hierarchy.getRoot();
     assertEquals("csv", root.getName());
-    List<Node> rows = children(root, "row");
+    List<Node> rows = children(root, "item");
     assertEquals(2, rows.size());
     assertFalse(rows.get(0).isArrayItem());
     assertFalse(child(rows.get(0), "firstname").isArrayItem());
     assertEquals("Fred", child(rows.get(0), "firstname").getValue());
     assertEquals("Wilma", child(rows.get(1), "firstname").getValue());
-    assertEquals(List.of("Fred", "Wilma"), hierarchy.select(HierarchyPath.fromSlashPath("/csv/row/firstname"))
+    assertEquals(List.of("Fred", "Wilma"), hierarchy.select(HierarchyPath.fromSlashPath("/csv/item/firstname"))
         .stream()
         .map(Node::getValue)
         .toList());
@@ -60,7 +60,7 @@ class CsvInputReaderTest {
         """, StandardCharsets.UTF_8);
 
     Hierarchy hierarchy = new CsvInputReader().load(input.toString(), Map.of());
-    Node row = child(hierarchy.getRoot(), "row");
+    Node row = child(hierarchy.getRoot(), "item");
 
     assertEquals("7", child(child(row, "person"), "id").getValue());
     assertEquals("Fred", child(child(row, "person"), "firstname").getValue());
@@ -73,7 +73,7 @@ class CsvInputReaderTest {
     Files.writeString(input, "name,note\nFred,\"hello, \"\"friend\"\"\nagain\"\n", StandardCharsets.UTF_8);
 
     Hierarchy hierarchy = new CsvInputReader().load(input.toString(), Map.of());
-    Node row = child(hierarchy.getRoot(), "row");
+    Node row = child(hierarchy.getRoot(), "item");
 
     assertEquals("Fred", child(row, "name").getValue());
     assertEquals("hello, \"friend\"\nagain", child(row, "note").getValue());
@@ -85,7 +85,7 @@ class CsvInputReaderTest {
     Files.writeString(input, "firstname,surname\nFred\n", StandardCharsets.UTF_8);
 
     Hierarchy hierarchy = new CsvInputReader().load(input.toString(), Map.of());
-    Node row = child(hierarchy.getRoot(), "row");
+    Node row = child(hierarchy.getRoot(), "item");
 
     assertEquals("", child(row, "surname").getValue());
   }

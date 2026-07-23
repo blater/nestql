@@ -162,7 +162,7 @@ insert into person (personid, firstname)
 values ({message.person.id}, {message.person.firstname});
 ```
 
-CSV uses a synthetic root and repeated row nodes:
+CSV uses a synthetic root and repeated `item` nodes:
 
 ```csv
 person.id,person.firstname
@@ -174,7 +174,7 @@ Paths:
 
 ```sql
 insert into person (personid, firstname)
-values ({csv.row.person.id}, {csv.row.person.firstname});
+values ({csv.item.person.id}, {csv.item.person.firstname});
 ```
 
 Parquet uses domain names from the file stem and schema message name by
@@ -1110,8 +1110,8 @@ JSON and YAML:
 CSV:
 
 - Root is `csv`.
-- Each record is a repeated `row`.
-- Headers become child paths under each row.
+- Each record is a repeated `item`.
+- Headers become child paths under each item.
 - Dotted headers create nested nodes.
 
 Example:
@@ -1124,8 +1124,8 @@ person.id,person.firstname
 Paths:
 
 ```sql
-{csv.row.person.id}
-{csv.row.person.firstname}
+{csv.item.person.id}
+{csv.item.person.firstname}
 ```
 
 Parquet:
@@ -1393,7 +1393,7 @@ YAML input follows the same structure rules as JSON:
 ### CSV Input
 
 - Root is `csv`.
-- Rows are repeated `row` nodes.
+- Rows are repeated `item` nodes.
 - Headers become child names.
 - Dotted headers become nested paths.
 - Quoted commas, quotes, and newlines are parsed as normal CSV.
