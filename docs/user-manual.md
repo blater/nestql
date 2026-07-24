@@ -302,11 +302,11 @@ With no pattern, the command lists table names only. A table name or `*` pattern
 | Argument      | Meaning                                                  |
 |---------------|----------------------------------------------------------|
 | `script-file` | The nestQL script to load and run. Not required when a load file is supplied on its own or for maintenance. |
-| `load-file`   | XML, JSON, YAML, CSV, or Parquet input. On its own, it is loaded into the cache and made active; with a script, it is used by cached queries or mapped DML statements. |
+| `load-file`   | XML, JSON, YAML, CSV, or Parquet input. On its own, it is loaded into a persistent cache and made active. With a script, it is queried through temporary H2 unless `--cache` or JDBC settings select another destination. |
 
-If a script only queries the database and produces output, the load file is not read. If a mapped DML statement needs input and the file is missing, execution fails when that statement is reached.
+When JDBC settings select an external database, a load file is not read by a select-only script. Mapped DML reads it when the statement needs input, and reports a missing file at that point. Without JDBC settings, the file is loaded immediately as the temporary database being queried.
 
-An input file on its own selects and loads its cache. With explicit `--cache`, an input file accompanying a script selects its cache. Without an input file, the active cache is used. With neither `--cache` nor JDBC settings, a script also falls back to the active cache.
+An input file accompanying a script is loaded into a temporary in-memory H2 database when neither `--cache` nor JDBC settings are supplied. Explicit `--cache` selects the file's persistent cache instead. With JDBC settings, the file remains input for mapped DML. Without an input file or JDBC settings, a script falls back to the active persistent cache.
 
 ### Options
 
@@ -333,7 +333,7 @@ An input file on its own selects and loads its cache. With explicit `--cache`, a
 | `--no-key-inference`       | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
 | `--metadata-refresh`       | Rebuild cached key and relationship metadata for the selected target, then exit. |
 | `--metadata-expiry-hours hours` | Persist metadata expiry for the selected target; zero refreshes every use. |
-| `--cache`                  | Select an input file's local cache for a script; a lone input file is cached without this option. |
+| `--cache`                  | Persist and reuse an input file's local H2 cache; a lone input file is persistently cached without this option. |
 | `--use-cache input-file-or-cache-filename` | Make an existing cache active without loading or rebuilding it. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
 | `--clear-cache`            | Clear all caches, all variants for one input file, or one named cache file. |
@@ -423,7 +423,7 @@ The selected executable must contain the requested JDBC dependency. If it does n
 
 Supplied values are used as written. nestQL does not validate port ranges, encode URL components, or reconcile inconsistent credentials; the JDBC driver or database reports those errors. For example, `--host=` and `--port=` supply explicit empty values rather than selecting defaults, while omitting those options selects documented defaults. The simple form requires `--db` and `--database` together and does not decompose an existing `jdbc.database` URL from a properties file.
 
-Explicit `--cache` takes precedence over JDBC settings because cache operations own their local H2 connection. Non-JDBC values from the same properties file remain available as runtime parameters. Cache-maintenance commands ignore JDBC settings. Without `--cache`, explicit JDBC settings take precedence over the active-cache fallback. Command-line passwords may be visible in shell history and process listings; prefer a protected properties file for reusable credentials.
+Explicit `--cache` takes precedence over JDBC settings because cache operations own their local H2 connection. Non-JDBC values from the same properties file remain available as runtime parameters. Cache-maintenance commands ignore JDBC settings. Without `--cache`, explicit JDBC settings use an accompanying input file for mapped DML; without JDBC settings, that file is queried through temporary H2. With no input file, JDBC settings take precedence over the active-cache fallback. Command-line passwords may be visible in shell history and process listings; prefer a protected properties file for reusable credentials.
 
 ### Input File Type Selection
 
@@ -439,11 +439,33 @@ Input file type is selected by file extension:
 
 Extension matching is case-insensitive. Blank or missing input filenames preserve the historical empty XML-input behavior.
 
-### Cache Query Mode
+### Querying Input Files: Temporary and Persistent H2
 
-A lone input file loads into a persistent local H2 database as if `--cache` had been supplied. The option remains available for selecting a specific input cache for a query or explicitly requesting the active cache.
+nestQL materializes the same SQL tables for both modes. The difference is how long the H2 database lives and whether it can be reused.
 
-Load an input and make its cache active:
+#### Temporary loading by default
+
+Supplying a script and input file without `--cache` or JDBC settings loads the file into an in-memory H2 database:
+
+```bash
+nestql 'select id from item where a in (select max(a) from item);' elements.json
+```
+
+The database exists only for that command and is discarded when the command finishes. The source file is read again on every invocation, so changes are visible immediately. Temporary loads create no cache file, do not appear in `--list-caches`, do not change the active cache, and do not persist inferred key metadata. `--cache-dir` has no effect on them.
+
+Temporary loading avoids cache files, stale results, H2 file locking, and active-cache side effects. Its costs are that parsing and table creation are repeated for every command, the database cannot be reused later, and the materialized data must fit comfortably in memory. It is therefore a good default for one-off queries and modest input files.
+
+#### Persistent caching with `--cache`
+
+Add `--cache` when repeated queries or a larger input make reuse more valuable than automatic freshness:
+
+```bash
+nestql totals.nql customers.json --cache --output json
+```
+
+The first command loads the file into a file-backed H2 database. Later commands reuse that database without rereading the source, and it becomes the active cache. Persistent caching avoids repeated parsing and loading and can handle data without requiring the complete database to remain in memory. It uses disk space, can encounter H2 file-lock contention between processes, and may return stale data because the cache is not automatically synchronized when the source file changes.
+
+A lone input file remains a persistent load-and-activate shorthand:
 
 ```bash
 nestql customers.json
@@ -455,13 +477,7 @@ The command reports either `Loaded cache for <path>` or `Using existing cache fo
 nestql totals.nql --output json
 ```
 
-Select another cache explicitly:
-
-```bash
-nestql totals.nql customers.json --cache --output json
-```
-
-That cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. When `--cache` is absent, JDBC settings win over the active-cache fallback. Supplying an input file alongside a script without `--cache` retains its mapped-DML meaning.
+This shorthand is persistent because an in-memory load with no script to query it would be discarded without doing useful work. A persistent cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. Without `--cache`, JDBC settings make an accompanying input file a mapped-DML source; without JDBC settings, the file is queried through temporary H2. With no input file, JDBC settings win over the active-cache fallback.
 
 To switch the active selection without running a query or loading the source
 file, use:
@@ -484,7 +500,7 @@ By default, cache files are stored under:
 ~/.nestql/cache
 ```
 
-Use `--cache-dir path` to choose another directory.
+Use `--cache-dir path` to choose another directory for persistent caches.
 
 The active selection is stored in:
 
@@ -494,7 +510,7 @@ The active selection is stored in:
 
 It records the generated cache file, so a cache loaded with a custom `--cache-dir` remains active without repeating that option. Cache databases use the form `cache-<source-hash>.mv.db`; the hash is derived from configuration and never requires a database connection.
 
-Cache reuse is automatic. Once a cache exists for an input path, nestQL reuses it until it is explicitly cleared. The cache is not synchronized with changes to the input file. An explicit Parquet `--parquet-record` name is part of the cache identity because it changes the generated table name; `--parquet-root` is not, because the hierarchy root is not materialized as a cache table. Clearing a Parquet input path clears all record-name variants for that source file.
+Persistent cache reuse is automatic. Once a cache exists for an input path, nestQL reuses it until it is explicitly cleared. The cache is not synchronized with changes to the input file; omit `--cache` for a fresh temporary load or clear the persistent cache before rebuilding it. An explicit Parquet `--parquet-record` name is part of the persistent cache identity because it changes the generated table name; `--parquet-root` is not, because the hierarchy root is not materialized as a cache table. Clearing a Parquet input path clears all record-name variants for that source file.
 
 When a cache is built, nestQL creates input-structure tables. Object names become table names, direct scalar children become columns, and nested objects become related tables.
 

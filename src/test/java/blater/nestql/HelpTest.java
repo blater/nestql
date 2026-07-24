@@ -55,6 +55,17 @@ class HelpTest {
   }
 
   @Test
+  void queryAndCacheHelpSeparateEphemeralQueriesFromPersistentCaches() throws Exception {
+    String query = captureStdout(() -> Main.main("--help", "query"));
+    String output = captureStdout(() -> Main.main("--help", "cache"));
+
+    assertTrue(query.contains("temporary in-memory H2"));
+    assertTrue(output.contains("persistent local H2"));
+    assertTrue(output.contains("file-backed H2"));
+    assertFalse(output.contains("temporary in-memory H2"));
+  }
+
+  @Test
   void useCacheHelpExplainsThatItOnlySelectsExistingCaches() throws Exception {
     String output = captureStdout(() -> Main.main("--help", "use-cache"));
 

@@ -62,7 +62,7 @@ public final class Help {
       AVAILABLE HELP TOPICS
           query          Run a script against a database or input-file cache.
           catalog        List tables or show details for matching tables.
-          cache          Query an XML, JSON, YAML, CSV, or Parquet input file.
+          cache          Load and reuse persistent input-file caches.
           use-cache      Switch the active cache without loading an input file.
           clear-cache    Remove all caches, one input's caches, or old caches.
           list-caches    List persistent input-file caches.
@@ -117,15 +117,16 @@ public final class Help {
 
       DESCRIPTION
           A script may be a filename or inline script text. Supply an input file
-          for mapped DML, or combine it with --cache to query the file through a
-          persistent local H2 database. With no input or JDBC connection, the
-          script queries the active cache. DQL structure keys are inferred from
-          database metadata unless --no-key-inference is supplied. Use --debug
-          to log the inferred relationships selected for each query to stderr.
+          without JDBC settings to query it through temporary in-memory H2.
+          Add --cache to persist and reuse that H2 database. With JDBC settings,
+          the input supplies mapped DML values. With no input or JDBC connection,
+          the script queries the active cache. DQL structure keys are inferred
+          from database metadata unless --no-key-inference is supplied.
 
       EXAMPLES
           nestql report.nql -p database.properties
           nestql update.nql customers.json -p database.properties
+          nestql 'select id from item;' elements.json
           nestql query.nql customers.json --cache --output json
           nestql 'output json; select 1 into {result.value};' -p database.properties
 
@@ -138,7 +139,7 @@ public final class Help {
 
   static final String CACHE_CMD = """
       CACHE
-          Query a structured input file through a persistent local H2 cache.
+          Load and query a structured input file through persistent local H2.
 
       SYNOPSIS
           nestql <input-file> [--cache-dir path]
@@ -147,12 +148,11 @@ public final class Help {
           nestql <script> [--output type]
 
       DESCRIPTION
-          Supported input types are XML, JSON, YAML, CSV, and Parquet. Caches are
-          stored under ~/.nestql/cache by default and reused until explicitly
-          cleared. An input file supplied on its own is loaded and made active,
-          just as if --cache had been used. A script with no input or JDBC
-          connection queries the active cache. Explicit --cache selects an input
-          cache for a script and takes precedence over supplied JDBC settings.
+          Supported input types are XML, JSON, YAML, CSV, and Parquet. --cache
+          persists, reuses, and activates a file-backed H2 database under
+          ~/.nestql/cache. A lone input file also loads and activates its
+          persistent cache. A script with no input or JDBC connection queries
+          the active cache. Explicit --cache takes precedence over JDBC settings.
 
       EXAMPLES
           nestql customers.json
@@ -160,6 +160,7 @@ public final class Help {
           nestql totals.nql customers.json --cache --output json
 
       SEE ALSO
+          nestql --help query
           nestql --help use-cache
           nestql --help clear-cache
           nestql --help list-caches
@@ -335,7 +336,8 @@ public final class Help {
           nestQL is a SQL-like language for moving data between relational
           databases and XML, JSON, YAML, CSV, or Parquet documents. It can run
           scripts against an external JDBC database, apply mapped DML from an
-          input document, or query an input file through a persistent H2 cache.
+          input document, or query an input file through temporary or persistent
+          H2.
 
           Arguments may appear in any unambiguous order. A script may be a file
           or inline text. The input file type is selected by its extension. An
@@ -392,8 +394,9 @@ public final class Help {
               metadata on every use; the default is 24 hours.
 
           --cache
-              Load, select, or query a persistent local H2 cache. An explicit
-              cache takes precedence over JDBC settings.
+              Persist, select, or query a file-backed local H2 cache. Without
+              this option, a script and input file use temporary in-memory H2.
+              An explicit cache takes precedence over JDBC settings.
 
           --use-cache input-file-or-cache-filename
               Make an existing input-file cache active without loading or

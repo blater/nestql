@@ -1,6 +1,7 @@
 package blater.nestql;
 
 import blater.nestql.parser.HiqlSyntaxException;
+import blater.nestql.runner.sql.cache.CacheExecution;
 import blater.nestql.testsupport.ParquetTestFiles;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.schema.MessageType;
@@ -673,6 +674,7 @@ class MainTest {
 
   @Test
   void inlineQueryAutomaticallyUsesItsDataFileCache() throws Exception {
+    String query = "select id from item where a in (select max(a) from item);";
     Path input = write("elements.json", """
         [
           {"a": 1, "id": 1},
@@ -681,22 +683,42 @@ class MainTest {
           {"a": 1, "id": 4}
         ]
         """);
+    Path cacheDir = tempDir.resolve("implicit-file-cache");
+    var params = ParameterParser.parse(query, input.toString());
+
+    assertFalse(params.containsKey(ParameterParser.CACHE_MODE_PARAM));
+    assertTrue(CacheExecution.usesEphemeralCache(params));
 
     String[] output = new String[1];
     String normalLog = captureStderr(() -> output[0] = captureStdout(() -> Main.main(
-        "select id from item where a in (select max(a) from item);",
+        query,
         input.toString(),
-        "--cache-dir", tempDir.resolve("implicit-file-cache").toString())));
+        "--cache-dir", cacheDir.toString())));
 
     assertEquals("""
         [{"id":"2"},{"id":"3"}]
         """, output[0]);
     assertEquals("", normalLog);
+    assertFalse(Files.exists(cacheDir));
+
+    Files.writeString(input, """
+        [
+          {"a": 4, "id": 4},
+          {"a": 3, "id": 5}
+        ]
+        """);
+    String refreshed = captureStdout(() -> Main.main(
+        query,
+        input.toString(),
+        "--cache-dir", cacheDir.toString()));
+    assertEquals("""
+        [{"id":"4"}]
+        """, refreshed);
 
     String debugLog;
     try {
       debugLog = captureStderr(() -> captureStdout(() -> Main.main(
-          "select id from item where a in (select max(a) from item);",
+          query,
           input.toString(),
           "--cache-dir", tempDir.resolve("debug-file-cache").toString(),
           "--debug")));
@@ -705,6 +727,13 @@ class MainTest {
     }
     assertTrue(debugLog.contains("DEBUG: Trace SQL: create table item"));
     assertTrue(debugLog.contains("DEBUG: Cache table [item]"));
+
+    Path mappedCacheDir = tempDir.resolve("mapped-ephemeral-cache");
+    captureStdout(() -> Main.main(
+        "select id into {result.item.id} from item;",
+        input.toString(),
+        "--cache-dir", mappedCacheDir.toString()));
+    assertFalse(Files.exists(mappedCacheDir));
   }
 
   @Test

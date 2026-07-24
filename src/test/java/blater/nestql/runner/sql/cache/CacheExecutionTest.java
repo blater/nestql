@@ -75,6 +75,40 @@ class CacheExecutionTest {
   }
 
   @Test
+  void ephemeralCacheLoadsCurrentInputWithoutCreatingPersistentState() throws Exception {
+    Path input = write("ephemeral.json", """
+        { "data": { "customer": [{ "id": "FIRST" }] } }
+        """);
+    Path cacheDir = tempDir.resolve("ephemeral-cache");
+    Map<String, String> parameters = Map.of(
+        ParameterParser.INPUT_FILENAME, input.toString(),
+        ParameterParser.CACHE_DIR_PARAM, cacheDir.toString());
+
+    SqlExecutor first = CacheExecution.openForQuery(parameters).orElseThrow();
+    try (var rows = first.query("select id from customer")) {
+      assertTrue(rows.next());
+      assertEquals("FIRST", rows.stringValue(1));
+      assertTrue(first.cacheFile().isEmpty());
+    } finally {
+      first.close();
+    }
+
+    Files.writeString(input, """
+        { "data": { "customer": [{ "id": "SECOND" }] } }
+        """);
+    SqlExecutor second = CacheExecution.openForQuery(parameters).orElseThrow();
+    try (var rows = second.query("select id from customer")) {
+      assertTrue(rows.next());
+      assertEquals("SECOND", rows.stringValue(1));
+    } finally {
+      second.close();
+    }
+
+    assertFalse(Files.exists(cacheDir));
+    assertTrue(PersistentCache.active().isEmpty());
+  }
+
+  @Test
   void leavesExternalJdbcExecutionToScriptRunner() {
     Map<String, String> parameters = Map.of(
         ParameterParser.JDBC_CLASS_NAME_PARAM, "org.h2.Driver",

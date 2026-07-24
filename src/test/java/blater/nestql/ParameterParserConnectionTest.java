@@ -104,6 +104,23 @@ class ParameterParserConnectionTest {
   }
 
   @Test
+  void directJdbcAssignmentsKeepADataFileAsExternalDatabaseInput() throws Exception {
+    Path input = properties("input.json", "{}");
+
+    Map<String, String> params = ParameterParser.parse(
+        "select 1;",
+        input.toString(),
+        "jdbc.class.name=org.h2.Driver",
+        "jdbc.database=jdbc:h2:mem:external");
+
+    assertEquals(input.toString(), params.get(INPUT_FILENAME));
+    assertEquals("org.h2.Driver", params.get(JDBC_CLASS_NAME_PARAM));
+    assertEquals("jdbc:h2:mem:external", params.get(JDBC_DATABASE_PARAM));
+    assertFalse(params.containsKey(CACHE_MODE_PARAM));
+    assertFalse(blater.nestql.runner.sql.cache.CacheExecution.usesEphemeralCache(params));
+  }
+
+  @Test
   void commandLineOverridesPropertiesRegardlessOfPlacement() throws Exception {
     Path properties = properties("database.properties", """
         jdbc.driver=h2

@@ -8,6 +8,7 @@ import blater.nestql.util.Log;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import static blater.nestql.ParameterParser.CACHE_MODE_PARAM;
 import static blater.nestql.ParameterParser.INPUT_FILENAME;
@@ -41,6 +42,10 @@ public final class CacheExecution {
   }
 
   public static Optional<SqlExecutor> openForQuery(Map<String, String> parameters) {
+    if (usesEphemeralCache(parameters)) {
+      return Optional.of(openEphemeral(parameters));
+    }
+
     Optional<CacheHandle> selected = selectedHandle(parameters);
     if (selected.isEmpty()) {
       return Optional.empty();
@@ -99,6 +104,23 @@ public final class CacheExecution {
     }
   }
 
+  private static SqlExecutor openEphemeral(Map<String, String> parameters) {
+    String databaseName = "nestql_" + UUID.randomUUID().toString().replace("-", "");
+    String jdbcUrl = "jdbc:h2:mem:" + databaseName + ";MODE=MySQL;NON_KEYWORDS=VALUE";
+    SqlExecutor executor = new SqlExecutor(jdbcParameters(parameters, jdbcUrl));
+    try {
+      String inputFilename = requiredInput(parameters);
+      CacheSource source = CacheSource.from(inputFilename, parameters);
+      Hierarchy input = InputReader.of(source.inputType())
+          .load(source.sourcePath(), parameters);
+      new HierarchyCacheLoader(executor).load(input);
+      return executor;
+    } catch (RuntimeException | Error ex) {
+      executor.close();
+      throw ex;
+    }
+  }
+
   private static void loadIfNeeded(
       CacheHandle handle,
       Map<String, String> parameters,
@@ -126,6 +148,12 @@ public final class CacheExecution {
 
   private static boolean cacheMode(Map<String, String> parameters) {
     return Boolean.parseBoolean(parameters.get(CACHE_MODE_PARAM));
+  }
+
+  public static boolean usesEphemeralCache(Map<String, String> parameters) {
+    return parameters.containsKey(INPUT_FILENAME)
+        && !cacheMode(parameters)
+        && !jdbcConfigured(parameters);
   }
 
   private static boolean jdbcConfigured(Map<String, String> parameters) {

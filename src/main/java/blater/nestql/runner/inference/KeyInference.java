@@ -6,6 +6,7 @@ import blater.nestql.parser.script.NestStatement;
 import blater.nestql.parser.script.SelectBlueprint;
 import blater.nestql.runner.sql.SqlExecutor;
 import blater.nestql.runner.sql.cache.CachedArtifact;
+import blater.nestql.runner.sql.cache.CacheExecution;
 import blater.nestql.runner.sql.cache.PersistentCache;
 import blater.nestql.util.Log;
 
@@ -84,6 +85,10 @@ public final class KeyInference {
       Map<String, String> parameters,
       boolean forceRefresh,
       List<String> referencedRelations) throws SQLException {
+    if (CacheExecution.usesEphemeralCache(parameters)) {
+      return DatabaseStructureInferrer.infer(executor.connection());
+    }
+
     DatabaseTargetIdentity target = DatabaseTargetIdentity.from(parameters);
     String identityText = executor.cacheIdentity().orElse(target.identityText());
     Path cacheFile = executor.cacheFile().orElseGet(() ->
