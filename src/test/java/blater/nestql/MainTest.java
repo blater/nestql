@@ -672,6 +672,42 @@ class MainTest {
   }
 
   @Test
+  void inlineQueryAutomaticallyUsesItsDataFileCache() throws Exception {
+    Path input = write("elements.json", """
+        [
+          {"a": 1, "id": 1},
+          {"a": 2, "id": 2},
+          {"a": 2, "id": 3},
+          {"a": 1, "id": 4}
+        ]
+        """);
+
+    String[] output = new String[1];
+    String normalLog = captureStderr(() -> output[0] = captureStdout(() -> Main.main(
+        "select id from item where a in (select max(a) from item);",
+        input.toString(),
+        "--cache-dir", tempDir.resolve("implicit-file-cache").toString())));
+
+    assertEquals("""
+        [{"id":"2"},{"id":"3"}]
+        """, output[0]);
+    assertEquals("", normalLog);
+
+    String debugLog;
+    try {
+      debugLog = captureStderr(() -> captureStdout(() -> Main.main(
+          "select id from item where a in (select max(a) from item);",
+          input.toString(),
+          "--cache-dir", tempDir.resolve("debug-file-cache").toString(),
+          "--debug")));
+    } finally {
+      blater.nestql.util.Log.debug(false);
+    }
+    assertTrue(debugLog.contains("DEBUG: Trace SQL: create table item"));
+    assertTrue(debugLog.contains("DEBUG: Cache table [item]"));
+  }
+
+  @Test
   void catalogCommandStoresItsOptionalPatternAndConnectionSelection() {
     var summary = ParameterParser.parse("catalog");
     var details = ParameterParser.parse("--output=json", "catalog", "customer*");

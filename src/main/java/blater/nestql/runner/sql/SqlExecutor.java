@@ -154,7 +154,7 @@ public final class SqlExecutor {
     String generatedKey = null;
 
     sql = SqlCommentFilter.filterOutComments(sql);
-    Log.info("Trace SQL: {}", sql);
+    Log.debug("Trace SQL: {}", sql);
     Connection connection = context.connection();
     try {
       PreparedStatement statement = returnGeneratedKey
@@ -194,7 +194,7 @@ public final class SqlExecutor {
 
     int rowCount = 0;
     sql = SqlCommentFilter.filterOutComments(sql);
-    Log.info("Trace SQL: {}", sql);
+    Log.debug("Trace SQL: {}", sql);
     Connection connection = context.connection();
     try (PreparedStatement statement = connection.prepareStatement(sql)) {
       for (List<Object> parameters : batchParameters) {

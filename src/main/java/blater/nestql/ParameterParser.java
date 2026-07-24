@@ -60,12 +60,14 @@ public final class ParameterParser {
     String databaseName = null;
     String host = null;
     String port = null;
+    boolean connectionArgumentsSupplied = false;
 
     for (int i = 0; i < args.length; i++) {
       String argument = args[i];
       int equals = argument.startsWith("--") ? argument.indexOf('=') : -1;
       String option = equals < 0 ? argument : argument.substring(0, equals);
       String attachedValue = equals < 0 ? null : argument.substring(equals + 1);
+      connectionArgumentsSupplied |= isConnectionArgument(option);
 
       switch (option) {
         case "-p" -> {
@@ -182,7 +184,7 @@ public final class ParameterParser {
       }
     }
 
-    if (positionals.size() == 1 && isInputFile(positionals.getFirst())) {
+    if (hasImplicitCacheInput(positionals, connectionArgumentsSupplied)) {
       commandParameters.put(CACHE_MODE_PARAM, "true");
     }
 
@@ -291,6 +293,23 @@ public final class ParameterParser {
         || parameters.containsKey(CACHE_CLEAR_OLDER_THAN_PARAM)
         || parameters.containsKey(CACHE_LIST_PARAM)
         || parameters.containsKey(CACHE_USE_PARAM);
+  }
+
+  private static boolean hasImplicitCacheInput(
+      List<String> positionals,
+      boolean connectionArgumentsSupplied) {
+    boolean hasInputFile = positionals.stream().anyMatch(ParameterParser::isInputFile);
+    return hasInputFile
+        && (positionals.size() == 1 || !connectionArgumentsSupplied);
+  }
+
+  private static boolean isConnectionArgument(String option) {
+    return switch (option) {
+      case "-p", "--db", "--database", "--host", "--port",
+          "--user", "--password", "--jdbc-driver", "--jdbc-class-name",
+          "--jdbc-database", "--jdbc-username", "--jdbc-password" -> true;
+      default -> false;
+    };
   }
 
   private static void applySimpleConnection(

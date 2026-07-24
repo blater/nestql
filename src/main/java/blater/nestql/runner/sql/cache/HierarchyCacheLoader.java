@@ -78,7 +78,7 @@ public final class HierarchyCacheLoader {
     flushAllTables();
     for (TableState table : tables.values()) {
       if (table.created) {
-        Log.info("Cache table [{}]", table.logicalName);
+        Log.debug("Cache table [{}]", table.logicalName);
       }
     }
   }
