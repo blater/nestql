@@ -24,7 +24,7 @@ Given [`elements.json`](docs/examples/jq/elements.json):
 Run an inline query against the file's local cache:
 
 ```bash
-nestql 'select id from item where a in (select max(a) from item);' docs/examples/jq/elements.json --cache
+nestql 'select id from item where a in (select max(a) from item);' docs/examples/jq/elements.json
 ```
 
 The result contains both records tied for the maximum:
@@ -101,7 +101,6 @@ structure
 ```
 
 Run the script against the database:
-
 ```bash
 nestql customer-orders.nql -p database.properties
 ```
@@ -186,17 +185,10 @@ The complete [`identity-customers.json`](docs/examples/identity-customers.json) 
     "customer": [
       {
         "id": "C2001",
-        "address": [
-          {
-            "id": "A4001",
-            "kind": "residential",
-            "country_code": "GB"
-          }
+        "address": [ 
+          { "id": "A4001", "kind": "residential", "country_code": "GB" } 
         ],
-        "kyc": {
-          "id": "K5001",
-          "status": "approved"
-        }
+        "kyc": { "id": "K5001", "status": "approved" }
       }
     ]
   }
@@ -206,10 +198,7 @@ The complete [`identity-customers.json`](docs/examples/identity-customers.json) 
 [`identity-country-counts.nql`](docs/examples/identity-country-counts.nql) joins the generated cache tables, filters the source rows, aggregates them and maps the result:
 
 ```sql
-output json;
-
 select
-  a.country_code as country_key,
   a.country_code into {result.region.country},
   count(distinct c.id) into {result.region.customerCount}
 from customer c
@@ -218,23 +207,24 @@ inner join kyc k on k.customer_id = c.id
 where a.kind = 'residential'
   and k.status <> 'not_started'
 group by a.country_code
-order by country_key
 structure {result.region} key (country_key);
 ```
 
 Run it against the complete example:
 
 ```bash
-nestql \
-  docs/examples/identity-country-counts.nql \
-  docs/examples/identity-customers.json \
-  --cache
+nestql identity-country-counts.nql identity-customers.json
 ```
 
 Result:
 
 ```json
-{"result":{"region":[{"country":"GB","customerCount":"2"},{"country":"US","customerCount":"4"}]}}
+{"result":{
+  "region":[
+     {"country":"GB","customerCount":"2"},{"country":"US","customerCount":"4"}
+   ]
+ }
+}
 ```
 
 See the [nestQL user manual](docs/user-manual.md) for the complete language and command-line reference, and [`docs/examples`](docs/examples/) for further runnable examples.
