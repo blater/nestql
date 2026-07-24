@@ -182,6 +182,10 @@ public final class ParameterParser {
       }
     }
 
+    if (positionals.size() == 1 && isInputFile(positionals.getFirst())) {
+      commandParameters.put(CACHE_MODE_PARAM, "true");
+    }
+
     boolean cacheCommand = isCacheCommand(commandParameters);
     Map<String, String> parameters = new LinkedHashMap<>(propertyParameters);
     if (!cacheCommand) {
@@ -506,12 +510,10 @@ public final class ParameterParser {
       }
       case 1 -> {
         String argument = positionArguments.getFirst();
-        if (Boolean.parseBoolean(params.get(CACHE_MODE_PARAM)) && isInputFile(argument)) {
+        if (isInputFile(argument)) {
           params.put(INPUT_FILENAME, argument);
         } else if (!fileExists(argument)) {
           params.put(SCRIPT_TEXT_PARAM, argument);
-        } else if (isInputFile(argument)) {
-          Log.fatal(IllegalArgumentException.class, "No script filename supplied.");
         } else {
           params.put(SCRIPT_FILE_PARAM, argument);
         }

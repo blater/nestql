@@ -24,6 +24,7 @@ class HelpTest {
     assertTrue(shortHelp.contains("Connection options:"));
     assertTrue(shortHelp.contains("-p <properties-file>"));
     assertTrue(shortHelp.contains("--jdbc-database <url>"));
+    assertTrue(shortHelp.contains("nestql <input-file> [cache-options]"));
     assertTrue(shortHelp.contains("--use-cache <input-file-or-cache-filename>"));
     assertTrue(shortHelp.contains("--parquet-record <name>"));
     assertTrue(shortHelp.contains("Run 'nestql --help' for the complete manual"));

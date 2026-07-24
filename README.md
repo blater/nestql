@@ -168,17 +168,19 @@ nestql query.nql customers.json --cache --output json
 Load a cache once and make it active, then run repeated queries without repeating the input path or `--cache`:
 
 ```bash
-nestql --cache customers.json
+nestql customers.json
 nestql first-query.nql
 nestql second-query.nql
 ```
 
-Select another cache explicitly with `nestql query.nql --cache other.json`. The selected cache becomes active.
+A supported input file supplied on its own is equivalent to `nestql --cache <input-file>`.
+Select another cache explicitly for a query with `nestql query.nql --cache other.json`. The selected cache becomes active.
 
 The general execution form is:
 
 ```text
 nestql <script-file-or-text> [input-file] [name=value ...] [options]
+nestql <input-file> [cache-options]
 ```
 
 Options and positional arguments can appear in any unambiguous order. When two files are supplied, nestQL identifies
@@ -190,8 +192,8 @@ recognised input file.
 
 | Argument | Description |
 |---|---|
-| `script-file-or-text` | A `.nql` script filename, or the script itself as one quoted command-line argument. Required except for standalone cache loading and cache-maintenance commands. |
-| `input-file` | Optional XML, JSON, YAML, CSV, or Parquet input. With standalone `--cache`, it is loaded and made active; otherwise it is available to cached queries or mapped DML statements. |
+| `script-file-or-text` | A `.nql` script filename, or the script itself as one quoted command-line argument. Required except when an input file is supplied on its own or for cache-maintenance commands. |
+| `input-file` | XML, JSON, YAML, CSV, or Parquet input. On its own, it is loaded into the cache and made active. With a script, it is available to cached queries or mapped DML statements. |
 | `name=value` | A runtime parameter used by `${name}` placeholders. Quote the complete argument when its value contains shell-sensitive characters or spaces. |
 
 Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`, `.csv`, or `.parquet`.
@@ -218,7 +220,7 @@ Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`,
 | `--no-key-inference` | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
 | `--metadata-refresh` | Rebuild cached key and relationship metadata for the selected target, then exit. |
 | `--metadata-expiry-hours HOURS` | Persist metadata expiry for the selected target; zero refreshes every use. |
-| `--cache` | Load or select an input file's persistent local H2 cache. With no input, query the active cache. Explicit cache mode overrides JDBC settings. |
+| `--cache` | Select an input file's persistent local H2 cache for a script. A lone input file is cached without this option. Explicit cache mode overrides JDBC settings. |
 | `--cache-dir PATH` | Store query caches under `PATH` instead of `~/.nestql/cache`. |
 | `--cache-dir=PATH` | Equals-form of `--cache-dir PATH`. |
 | `--list-caches` | List caches and their source files. This is a standalone maintenance command and does not take a script. |
@@ -243,7 +245,7 @@ either, output defaults to JSON. The command-line `catalog` command defaults to 
 Cache maintenance examples:
 
 ```bash
-nestql --cache customers.json
+nestql customers.json
 nestql --list-caches
 nestql --clear-cache
 nestql --clear-cache customers.json

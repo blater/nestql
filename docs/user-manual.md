@@ -39,9 +39,9 @@ jdbc.username=sa
 jdbc.password=
 ```
 
-### Query An Input File With `--cache`
+### Query An Input File Through The Cache
 
-`--cache` loads the input file into a persistent local H2 cache. It can be queried immediately or made active for repeated queries without repeating the input path. No external JDBC properties are required.
+An input file supplied on its own is loaded into a persistent local H2 cache and made active, as if `--cache` had been used. It can then be queried repeatedly without repeating the input path. No external JDBC properties are required.
 
 Input file:
 
@@ -73,7 +73,7 @@ structure {result.customer} key (c.id);
 Run:
 
 ```bash
-nestql --cache customers.json
+nestql customers.json
 nestql customers.nql
 ```
 
@@ -250,6 +250,7 @@ For simplicity, command examples from this point onward use the default `nestql`
 ```bash
 nestql script-file [load-file] [param=value ...] [-p properties-file] [--output type] [--cache]
 nestql catalog [table-pattern] [connection/cache options]
+nestql load-file [--cache-dir path]
 nestql --cache load-file [--cache-dir path]
 nestql --use-cache load-file-or-cache-filename [--cache-dir path]
 ```
@@ -269,7 +270,7 @@ nestql --use-cache customers.json
 Standalone cache loading also does not require a script:
 
 ```bash
-nestql --cache customers.json
+nestql customers.json
 ```
 
 Command-line help does not require a script:
@@ -300,12 +301,12 @@ With no pattern, the command lists table names only. A table name or `*` pattern
 
 | Argument      | Meaning                                                  |
 |---------------|----------------------------------------------------------|
-| `script-file` | The nestQL script to load and run. Not required for standalone cache loading or maintenance. |
-| `load-file`   | Optional input data file. With standalone `--cache`, it is loaded and made active; otherwise used by cached queries or mapped DML statements. |
+| `script-file` | The nestQL script to load and run. Not required when a load file is supplied on its own or for maintenance. |
+| `load-file`   | XML, JSON, YAML, CSV, or Parquet input. On its own, it is loaded into the cache and made active; with a script, it is used by cached queries or mapped DML statements. |
 
 If a script only queries the database and produces output, the load file is not read. If a mapped DML statement needs input and the file is missing, execution fails when that statement is reached.
 
-With explicit `--cache`, an input file selects its cache. Without an input file, the active cache is used. With neither `--cache` nor JDBC settings, a script also falls back to the active cache.
+An input file on its own selects and loads its cache. With explicit `--cache`, an input file accompanying a script selects its cache. Without an input file, the active cache is used. With neither `--cache` nor JDBC settings, a script also falls back to the active cache.
 
 ### Options
 
@@ -332,7 +333,7 @@ With explicit `--cache`, an input file selects its cache. Without an input file,
 | `--no-key-inference`       | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
 | `--metadata-refresh`       | Rebuild cached key and relationship metadata for the selected target, then exit. |
 | `--metadata-expiry-hours hours` | Persist metadata expiry for the selected target; zero refreshes every use. |
-| `--cache`                  | Load, select, or query a local cache; explicit cache mode overrides JDBC settings. |
+| `--cache`                  | Select an input file's local cache for a script; a lone input file is cached without this option. |
 | `--use-cache input-file-or-cache-filename` | Make an existing cache active without loading or rebuilding it. |
 | `--cache-dir path`         | Use a non-default cache directory.                |
 | `--clear-cache`            | Clear all caches, all variants for one input file, or one named cache file. |
@@ -440,12 +441,12 @@ Extension matching is case-insensitive. Blank or missing input filenames preserv
 
 ### Cache Query Mode
 
-`--cache` loads an input file into a persistent local H2 database. It can load a cache without a script, select a specific cache for a query, or explicitly request the active cache.
+A lone input file loads into a persistent local H2 database as if `--cache` had been supplied. The option remains available for selecting a specific input cache for a query or explicitly requesting the active cache.
 
 Load an input and make its cache active:
 
 ```bash
-nestql --cache customers.json
+nestql customers.json
 ```
 
 The command reports either `Loaded cache for <path>` or `Using existing cache for <path>`. Query the active cache without repeating the input filename or option:
@@ -460,7 +461,7 @@ Select another cache explicitly:
 nestql totals.nql customers.json --cache --output json
 ```
 
-That cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. When `--cache` is absent, JDBC settings win over the active-cache fallback. Supplying an input file without `--cache` retains its mapped-DML meaning.
+That cache becomes active for later queries. The source path shown by `--list-caches` is its identifier; cache names and aliases are not required. An explicit `--cache` wins over JDBC settings. When `--cache` is absent, JDBC settings win over the active-cache fallback. Supplying an input file alongside a script without `--cache` retains its mapped-DML meaning.
 
 To switch the active selection without running a query or loading the source
 file, use:

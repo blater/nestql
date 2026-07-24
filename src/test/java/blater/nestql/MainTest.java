@@ -658,6 +658,20 @@ class MainTest {
   }
 
   @Test
+  void inputFileAloneIsAStandaloneCacheCommand() {
+    for (String extension : List.of("xml", "csv", "json", "yaml", "yml", "parquet")) {
+      String input = "standalone." + extension;
+
+      var params = ParameterParser.parse(input);
+
+      assertEquals("true", params.get(ParameterParser.CACHE_MODE_PARAM));
+      assertEquals(input, params.get(ParameterParser.INPUT_FILENAME));
+      assertFalse(params.containsKey(ParameterParser.SCRIPT_FILE_PARAM));
+      assertFalse(params.containsKey(ParameterParser.SCRIPT_TEXT_PARAM));
+    }
+  }
+
+  @Test
   void catalogCommandStoresItsOptionalPatternAndConnectionSelection() {
     var summary = ParameterParser.parse("catalog");
     var details = ParameterParser.parse("--output=json", "catalog", "customer*");
@@ -820,9 +834,9 @@ class MainTest {
         """);
 
     String loaded = captureStdout(() -> Main.main(
-        "--cache-dir", cacheDir.toString(), "--cache", input.toString()));
+        "--cache-dir", cacheDir.toString(), input.toString()));
     String reused = captureStdout(() -> Main.main(
-        "--cache-dir", cacheDir.toString(), "--cache", input.toString()));
+        "--cache-dir", cacheDir.toString(), input.toString()));
     String queryOutput = captureStdout(() -> Main.main(script.toString()));
 
     String source = input.toAbsolutePath().normalize().toString();
