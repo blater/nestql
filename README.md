@@ -1,91 +1,153 @@
-##  NestQL
+# nestQL
 
-**NestQL** is a **SQL**-like language for dealing with **JSON** / **YAML** / **XML** / **CSV** / **Parquet** files.
-It allows you to query them, update databases from these files, and pull data out of databases in these formats.
+nestQL is a command-line SQL tool for querying JSON, YAML, XML, CSV and Parquet files alongside relational databases reached through JDBC. It can return tabular results, assemble query results into nested documents, and apply database changes using values read from structured files.
 
-## Full Documentation
+## From files and databases to useful output
 
-See the [nestQL user manual](docs/user-manual.md) for the complete language and command-line reference.
+### Find records in a JSON file
 
-### Getting started
+This example finds every record containing the highest value, using SQL instead of a format-specific query language.
 
-You use SQL and specify paths such as "{customers.person.address}" to reference fields in your json / yaml / xml file.
+Given [`elements.json`](docs/examples/jq/elements.json):
 
-For example if you have a json file of customers you want to update a DB from:
-``` sql 
-update address
-set street = {customers.person.addressline1},
-    city = {customers.person.addressline4}
-where personid = {customers.person.id};
+```json
+[
+  {"a": 1, "id": 1},
+  {"a": 2, "id": 2},
+  {"a": 2, "id": 3},
+  {"a": 1, "id": 4}
+]
 ```
 
-nestQL normally infers keys and relationships from database metadata. The SQL extension
-`structure {path.to.object} key (...)` explicitly tells nestQL which rows contribute to the same output object:
+Run an inline query against the file's local cache:
+
+```bash
+nestql \
+  'select id
+     from item
+    where a in (select max(a) from item);' \
+  docs/examples/jq/elements.json --cache
+```
+
+The result contains both records tied for the maximum:
+
+```json
+[{"id":"2"},{"id":"3"}]
+```
+
+The cache makes the file queryable as SQL tables. It is persistent, so the same file can be loaded once and queried repeatedly.
+
+### Extract data from a database
+
+This example retrieves selected customer records from an existing database and returns them as JSON.
+
+Suppose the database contains a __customer__ table:
+
+| id | name  | status     |
+|---:|-------|------------|
+| 1  | Alice | active     |
+| 2  | Bob   | inactive   |
+| 3  | Eva   | active     |
+
+Run an inline SQL query:
+
+```bash
+nestql \
+  "select id, name from customer where status = 'active' order by id;" \
+  -p database.properties --output json
+```
+
+Result:
+
+```json
+[{"id":"1","name":"Alice"},{"id":"3","name":"Eva"}]
+```
+
+The selected build must contain the JDBC driver for the target database.
+
+### Create a nested document for export
+
+This example produces a customer document with each customer's orders nested underneath, ready to save as JSON, XML or YAML or pass to another application.
+
+A relational join returns one row for every customer/order combination:
+
+| customer_id | customer_name | order_id | total |
+|------------:|---------------|---------:|------:|
+| 1           | Alice         | 10       | 24.50 |
+| 1           | Alice         | 11       | 13.00 |
+| 2           | Bob           | 12       | 40.00 |
+| 2           | Bob           | 13       | 5.00  |
+
+#### Inference and `structure`
+
+nestQL must decide when multiple SQL rows describe the same customer or child object. By default it infers object identity and parent-child relationships from JDBC metadata and naming conventions, using primary, unique and composite keys where available; it does not sample result rows to guess.
+
+Most mapped queries therefore need no `structure` clause. Add one when suitable key metadata is missing, inference is ambiguous, or—as in this export—the intended identity of each output object should be stated explicitly.
+
+`into` paths describe the desired document, while `structure` declares the identity of the repeated objects:
+
 ```sql
-output json;                                    -- create json output
-select personid into {people.person.id},     -- the persons id goes into people.person.id in the JSON
-       name into {people.person.firstname}   -- the name goes into people.person.name
-from person
-structure {people.person} key (personid);
+output json;
+
+select
+  c.id    into {customers.customer.id},
+  c.name  into {customers.customer.name},
+  o.id    into {customers.customer.order.id},
+  o.total into {customers.customer.order.total}
+from customer c
+left join customer_order o on o.customer_id = c.id
+order by c.id, o.id
+structure
+  {customers.customer} key (c.id),
+  {customers.customer.order} key (c.id, o.id);
 ```
-Output:
+
+Run the script against the database:
+
+```bash
+nestql customer-orders.nql -p database.properties
+```
+
+Result:
+
 ```json
 {
-  "people": {
-    "person": [
-      { "id": 1, "name": "Alice" },
-      { "id": 2, "name": "Bob" },
-      { "id": 3, "name": "Eva" }
-    ] }
+  "customers": {
+    "customer": [
+      {
+        "id": "1",
+        "name": "Alice",
+        "order": [
+          {"id": "10", "total": "24.50"},
+          {"id": "11", "total": "13.00"}
+        ]
+      },
+      {
+        "id": "2",
+        "name": "Bob",
+        "order": [
+          {"id": "12", "total": "40.00"},
+          {"id": "13", "total": "5.00"}
+        ]
+      }
+    ]
+  }
 }
 ```
 
-### More complex examples
-Complexity in most tools ramps up quickly when you need heirachical output or need to join tables.
-`structure` key declarations specify the relationships. This allows NestQL to take care of wrangling the
-output into the structure you want.
+The declarations state that rows with the same customer ID contribute to one customer, while rows with the same customer and order IDs contribute to one order. An explicit key overrides inference for that output path; if no key is declared or inferred, nestQL preserves row-first output for the path.
 
-Here's an example of retrieving a hierarchical relationship, in a database where people have one name but can have 
-zero or more nicknames & we want to extract this as structured XML:
+To write the result to a file, use the required output format and ordinary shell redirection:
 
-```sql
-output xml;
-select
-  p.personid  into {people.person.@id},                      -- we can put data into attributes in XML
-  n.nicknameid,
-  p.firstname into {people.person.name},
-  n.nickname  into {people.person.nicknames.nickname}
-from person p, nickname n
-where n.personid = p.personid
-structure
-  {people.person} key (p.personid),                          -- one person object per person ID
-  {people.person.nicknames.nickname} key (n.nicknameid);     -- a person can have more than one nickname in the DB
+```bash
+nestql customer-orders.nql -p database.properties --output yaml > customer-orders.yaml
 ```
 
-Output:
-```xml
-<people>
-  <person id=1>
-    <name>Alice</name>
-    <nicknames>
-      <nickname>Ali</nickname>
-    </nicknames>
-  </person>
-  ... etc
-  <person id=5>
-    <name>Eva</name>
-    <nicknames>
-      <nickname>Evie</surname>
-      <nickname>Hawkeye</surname>
-    </nicknames>
-  </person>
-</people>
-```
+### Apply data from a file to a database
 
+This example uses values from an incoming JSON document to update the corresponding database record.
 
-## Loading Files into a Database
-
-nestQL can also use XML, JSON, YAML, CSV, or Parquet files as input for database changes. For example, this JSON:
+Given `person.json`:
 
 ```json
 {
@@ -98,14 +160,7 @@ nestQL can also use XML, JSON, YAML, CSV, or Parquet files as input for database
 }
 ```
 
-can be inserted with:
-
-```sql
-insert into person (person_id, first_name)
-values ({message.person.id}, {message.person.first_name});
-```
-
-or used to update an existing row:
+The script `update-person.nql` reads values through mapping paths:
 
 ```sql
 update person
@@ -113,59 +168,105 @@ set first_name = {message.person.first_name}
 where person_id = {message.person.id};
 ```
 
-To apply the file to the database rather than query it with `--cache`, supply the input file after the script and use
-`-p` for the database connection. Equivalent YAML and XML structures use the same mapping paths:
+Apply it as follows (see the usage section for more about how to configure a db properties file with your connection information)
 
 ```bash
-nestql insert-person.nql person.json -p database.properties
-nestql update-person.nql person.yaml -p database.properties
+nestql update-person.nql person.json -p database.properties
 ```
 
+The row whose `person_id` is `7` is updated to use the name `Fred`. Equivalent YAML and XML structures can use the same mapping paths; CSV and Parquet inputs are also supported.
+
+### Produce a summary from nested data
+
+This example joins related customer, address and verification data from a nested file, then produces a country-level summary for reporting or downstream processing.
+
+The complete [`identity-customers.json`](docs/examples/identity-customers.json) contains customers with nested addresses and KYC records. A reduced excerpt shows the relevant shape:
+
+```json
+{
+  "identity_data": {
+    "customer": [
+      {
+        "id": "C2001",
+        "address": [
+          {
+            "id": "A4001",
+            "kind": "residential",
+            "country_code": "GB"
+          }
+        ],
+        "kyc": {
+          "id": "K5001",
+          "status": "approved"
+        }
+      }
+    ]
+  }
+}
+```
+
+[`identity-country-counts.nql`](docs/examples/identity-country-counts.nql) joins the generated cache tables, filters the source rows, aggregates them and maps the result:
+
+```sql
+output json;
+
+select
+  a.country_code as country_key,
+  a.country_code into {result.region.country},
+  count(distinct c.id) into {result.region.customerCount}
+from customer c
+inner join address a on a.customer_id = c.id
+inner join kyc k on k.customer_id = c.id
+where a.kind = 'residential'
+  and k.status <> 'not_started'
+group by a.country_code
+order by country_key
+structure {result.region} key (country_key);
+```
+
+Run it against the complete example:
+
+```bash
+nestql \
+  docs/examples/identity-country-counts.nql \
+  docs/examples/identity-customers.json \
+  --cache
+```
+
+Result:
+
+```json
+{"result":{"region":[{"country":"GB","customerCount":"2"},{"country":"US","customerCount":"4"}]}}
+```
+
+See the [nestQL user manual](docs/user-manual.md) for the complete language and command-line reference, and [`docs/examples`](docs/examples/) for further runnable examples.
 
 ## Usage
 
-nestQL can be launched in three ways. Invoke the main class directly when the compiled classes and dependencies are
-already on `CLASSPATH`:
-
-```bash
-java blater.nestql.Main report.nql -p database.properties
-```
-
-`mvn package` creates an executable fat JAR containing its runtime dependencies:
-
-```bash
-java -jar target/nestql-*.jar report.nql -p database.properties
-```
-
-Native builds produce one of three executables, according to the selected JDBC driver profile:
+The principal command forms are:
 
 ```text
-nestql             Common drivers: H2, MySQL, MariaDB, and PostgreSQL
-nestql-enterprise  Enterprise drivers: Oracle, SQL Server, DB2, SAP HANA, and Informix
-nestql-all         All common and enterprise drivers
+nestql <script-file-or-text> [input-file] [name=value ...] [options]
+nestql <input-file> [cache-options]
+nestql catalog [table-pattern] [options]
+nestql --use-cache <input-file-or-cache-filename> [cache-options]
+nestql --list-caches [cache-options]
+nestql --clear-cache [input-file-or-cache-filename] [cache-options]
 ```
 
-Their command-line syntax is identical. For simplicity, the remaining examples use the default `nestql` executable.
+A script can be a `.nql` file or one quoted inline argument. Options and positional arguments can appear in any unambiguous order.
 
-Run a script against an external database:
+### Files and caches
 
-```bash
-nestql report.nql -p database.properties
-```
+Input formats are selected by extension:
 
-Load an input file for mapped DML:
+- `.json`
+- `.yaml` or `.yml`
+- `.xml`
+- `.csv`
+- `.parquet`
 
-```bash
-nestql update-customers.nql customers.json -p database.properties region=EMEA
-```
-
-Query an input file through nestQL's local SQL cache, without an external database:
-
-```bash
-nestql query.nql customers.json --cache --output json
-```
-
-Load a cache once and make it active, then run repeated queries without repeating the input path or `--cache`:
+Supplying an input file on its own loads it into a persistent local H2 cache and makes that cache active:
 
 ```bash
 nestql customers.json
@@ -173,204 +274,97 @@ nestql first-query.nql
 nestql second-query.nql
 ```
 
-A supported input file supplied on its own is equivalent to `nestql --cache <input-file>`.
-Select another cache explicitly for a query with `nestql query.nql --cache other.json`. The selected cache becomes active.
-
-The general execution form is:
-
-```text
-nestql <script-file-or-text> [input-file] [name=value ...] [options]
-nestql <input-file> [cache-options]
-```
-
-Options and positional arguments can appear in any unambiguous order. When two files are supplied, nestQL identifies
-the input file by its extension, so `query.nql customers.json` and `customers.json query.nql` are equivalent. A
-nonexistent positional argument is treated as inline script text when the other positional argument, if any, is a
-recognised input file.
-
-### Positional Arguments
-
-| Argument | Description |
-|---|---|
-| `script-file-or-text` | A `.nql` script filename, or the script itself as one quoted command-line argument. Required except when an input file is supplied on its own or for cache-maintenance commands. |
-| `input-file` | XML, JSON, YAML, CSV, or Parquet input. On its own, it is loaded into the cache and made active. With a script, it is available to cached queries or mapped DML statements. |
-| `name=value` | A runtime parameter used by `${name}` placeholders. Quote the complete argument when its value contains shell-sensitive characters or spaces. |
-
-Input type is selected case-insensitively from `.xml`, `.json`, `.yaml`, `.yml`, `.csv`, or `.parquet`.
-
-### Options
-
-| Option | Description |
-|---|---|
-| `-p FILE` | Load JDBC settings and runtime parameters from a `.properties` file. |
-| `--db TYPE` | Build a JDBC connection for `h2`, `postgresql`, `mysql`, `mariadb`, `oracle`, `sqlserver`, `db2`, `hana`, or `informix`. Existing driver aliases are also accepted. |
-| `--database NAME` | Database name, Oracle service name, or H2 URL suffix. Used with `--db`. |
-| `--host HOST` | Database host. Defaults to `localhost`; not valid for H2. |
-| `--port PORT` | Database port. Conventional ports are inferred where available; HANA and Informix require this option. |
-| `--user USER` | Database username. |
-| `--password PASSWORD` | Database password. Optional; `--password=` supplies an explicit empty password. |
-| `--jdbc-driver NAME` | Set the exact `jdbc.driver` logical driver name. |
-| `--jdbc-class-name CLASS` | Set the exact `jdbc.class.name` driver class. |
-| `--jdbc-database URL` | Set the complete `jdbc.database` JDBC URL. |
-| `--jdbc-username USER` | Set the exact `jdbc.username` value. |
-| `--jdbc-password PASSWORD` | Set the exact `jdbc.password` value. |
-| `--output TYPE`, `-o TYPE` | Select `xml`, `json`, `csv`, `yaml`, or `markdown` output. |
-| `--output=TYPE` | Equals-form of `--output TYPE`. |
-| `--debug` | Log each query's inferred output-path, relation, key, and parent relationship decisions to stderr. |
-| `--no-key-inference` | Disable automatic DQL keys and preserve row-first output for paths without explicit `structure` keys. |
-| `--metadata-refresh` | Rebuild cached key and relationship metadata for the selected target, then exit. |
-| `--metadata-expiry-hours HOURS` | Persist metadata expiry for the selected target; zero refreshes every use. |
-| `--cache` | Select an input file's persistent local H2 cache for a script. A lone input file is cached without this option. Explicit cache mode overrides JDBC settings. |
-| `--cache-dir PATH` | Store query caches under `PATH` instead of `~/.nestql/cache`. |
-| `--cache-dir=PATH` | Equals-form of `--cache-dir PATH`. |
-| `--list-caches` | List caches and their source files. This is a standalone maintenance command and does not take a script. |
-| `--clear-cache` | Clear every cache in the selected cache directory. |
-| `--clear-cache INPUT` | Clear every cache variant belonging to one input file. |
-| `--clear-cache=INPUT` | Equals-form for clearing one input file's caches. |
-| `--clear-cache-older-than AGE` | Clear caches older than an age such as `30m`, `6h`, or `7d`. Long unit forms such as `minutes`, `hours`, and `days` are also accepted. |
-| `--clear-cache-older-than=AGE` | Equals-form of the cache-age option. |
-| `--parquet-root NAME` | Override the hierarchy root inferred from a Parquet filename. |
-| `--parquet-root=NAME` | Equals-form of `--parquet-root NAME`. |
-| `--parquet-record NAME` | Override the repeated record name inferred from the Parquet message type. |
-| `--parquet-record=NAME` | Equals-form of `--parquet-record NAME`. |
-
-Every long JDBC option supports both `--option VALUE` and `--option=VALUE`.
-An equals form with no value supplies an explicit empty string. A separated
-option requires a following value, so use `--password=-secret` when a value
-begins with `-`.
-
-The command-line output option takes precedence over an `output xml|json|csv|yaml|markdown;` directive in the script. Without
-either, output defaults to JSON. The command-line `catalog` command defaults to Markdown.
-
-Cache maintenance examples:
+The default cache directory is `~/.nestql/cache`. Common cache operations are:
 
 ```bash
-nestql customers.json
 nestql --list-caches
-nestql --clear-cache
+nestql --use-cache customers.json
 nestql --clear-cache customers.json
 nestql --clear-cache-older-than 7d
-nestql --cache-dir /tmp/nestql-cache --list-caches
 ```
 
-Catalog the active cache or a configured database without creating a script:
+Use `--cache-dir <path>` to select another cache directory. `--use-cache` and targeted `--clear-cache` also accept a bare `cache-*.mv.db` filename, resolved under the selected cache directory.
+
+Inspect the active cache or configured database with:
 
 ```bash
 nestql catalog
 nestql catalog customer
-nestql catalog 'audit*' --output json
-nestql catalog '*' --cache customers.json
+nestql catalog 'audit*'
 ```
 
-With no pattern, `catalog` lists table names only. A table name or `*` pattern returns full table and column details.
+### Database connections
 
-### Command-Line Database Connections
-
-The simple form infers the driver class, JDBC URL, host, and conventional port:
-
-```bash
-nestql report.nql --db postgresql --database customer_data --user report_user
-```
-
-Override the network defaults when required:
-
-```bash
-nestql report.nql \
-  --db postgresql \
-  --database customer_data \
-  --host db.internal.example \
-  --port 5544 \
-  --user report_user
-```
-
-For an existing or vendor-specific JDBC URL, use the exact form:
-
-```bash
-nestql report.nql \
-  --jdbc-driver postgresql \
-  --jdbc-database 'jdbc:postgresql://db.internal.example:5432/customer_data' \
-  --jdbc-username report_user
-```
-
-The simple form uses `sa` as the H2 username and the current OS username for
-PostgreSQL, MySQL, and MariaDB. Other drivers leave the username absent. Host
-defaults to `localhost`; default ports are PostgreSQL `5432`, MySQL/MariaDB
-`3306`, Oracle `1521`, SQL Server `1433`, and Db2 `50000`. HANA and Informix
-require `--port` because they have no single safe default.
-
-Supplied connection values are used as written. nestQL does not validate port
-ranges, encode URL components, or reconcile inconsistent credentials. Use the
-exact form for advanced vendor syntax. Explicit `--cache` takes precedence over
-JDBC connection options; cache maintenance commands ignore them.
-
-### Properties File
-
-External database connections normally use a Java-style `.properties` file:
+Connection details can be kept in a database properties file:
 
 ```properties
 jdbc.driver=postgresql
 jdbc.database=jdbc:postgresql://localhost:5432/customer_data
-jdbc.username=nestql
+jdbc.username=report_user
 jdbc.password=change-me
-
-region=EMEA
-fromDate=2026-01-01
 ```
+The supported logical driver names are `h2`, `mysql`, `mariadb`, `postgresql`, `oracle`, `sqlserver`, `db2`, `hana` and `informix`. Exact JDBC settings are available through `--jdbc-driver`, `--jdbc-class-name`, `--jdbc-database`, `--jdbc-username` and `--jdbc-password`.
 
-The JDBC properties are:
-
-| Property | Description |
-|---|---|
-| `jdbc.driver` | Preferred logical driver name: `h2`, `mysql`, `mariadb`, `postgresql`, `oracle`, `sqlserver`, `db2`, `hana`, or `informix`. The selected build must include that driver's dependency or connection-time class loading fails. |
-| `jdbc.class.name` | Legacy alternative containing a JDBC driver class name, for example `org.h2.Driver`. `jdbc.driver` wins when both are present. |
-| `jdbc.database` | JDBC connection URL passed to `DriverManager`, such as `jdbc:postgresql://localhost:5432/customer_data`. |
-| `jdbc.username` | Database username. |
-| `jdbc.password` | Database password; an empty value is allowed when the database permits it. |
-
-Other properties become ordinary runtime parameters. For example, `${region}` resolves to `EMEA` from the file above,
-and `${missing:default}` uses `default` when no parameter or Java system property supplies `missing`.
-
-Properties may use `key=value` or `key: value`. Blank lines and lines beginning with `#` or `!` are ignored. When
-multiple properties files define the same value, the later file wins. Values supplied directly on the command line
-always override properties-file values, regardless of where `-p` appears:
+You can specify the database properties in the nestql command using the "-p filename" flag. e.g.:
 
 ```bash
-nestql report.nql -p database.properties region=APAC
-nestql report.nql region=APAC -p database.properties
+nestql myscript.nql -p mydbprops.properties
 ```
 
-Both commands use `region=APAC`. This also permits partial connection settings,
-for example credentials in `database.properties` with `--db` and `--database`
-on the command line. Exact command-line `--jdbc-*` values override values
-inferred from the simple form, regardless of their argument position. Among
-command-line values for the same runtime property, the later value wins. An
-explicit command-line `jdbc.class.name` replaces a `jdbc.driver` inherited from
-properties; when both are supplied directly on the command line,
-`jdbc.driver` takes precedence.
+You can also provide connection details directly (though it's not recommended to use --password outside of a dev environment):
 
-Only `.properties` parameter files currently load values; XML, JSON, and YAML parameter-file loading is not yet
-implemented. A properties file is not required in `--cache` mode because nestQL supplies the local H2 connection.
-Keep property files containing credentials out of source control and restrict their filesystem permissions. Prefer a
-properties file for reusable passwords because command-line values can be visible in shell history and process listings.
+```bash
+nestql report.nql \
+  --db mysql \
+  --database customer_data \
+  --host localhost \
+  --user report_user \
+  --password=change-me
+```
 
+### Output and help
 
-### Building with Maven
+Output defaults to JSON. Select another format in the script like this:
 
-NestQL is built with Maven. The default build uses the active `jdbc-common`
-profile, which includes the common open-source JDBC drivers.
+```sql
+output xml;
+```
+
+You can also specify the output format on the command line with the "--output" flag
+```bash
+nestql report.nql -p database.properties --output yaml
+```
+Supported output formats are JSON, YAML, XML, CSV and Markdown.
+
+Use the built-in help for the current command-line reference:
+
+```bash
+nestql -h
+nestql --help
+nestql --help cache
+nestql --help connection
+```
+
+## How to build
+
+nestQL requires JDK 25 and Maven. A GraalVM JDK with Native Image is required only for native executables.
+
+### JVM build
+
+Run the test suite and create the executable fat JAR:
 
 ```bash
 mvn test
 mvn package
 ```
 
-Use `-DskipTests` when you only need a package after tests have already passed:
+Run the packaged application with:
 
 ```bash
-mvn -DskipTests package
+java -jar target/nestql-*.jar -h
 ```
 
-JDBC driver profile variations:
+The default `jdbc-common` profile includes H2, MySQL, MariaDB and PostgreSQL. Alternative driver sets are:
 
 ```bash
 mvn -Pjdbc-common package
@@ -378,27 +372,23 @@ mvn -Pjdbc-enterprise package
 mvn -Pjdbc-all package
 ```
 
-- `jdbc-common`: H2, MySQL, MariaDB, and PostgreSQL.
-- `jdbc-enterprise`: Oracle, SQL Server, DB2, SAP HANA, and Informix.
-- `jdbc-all`: common and enterprise driver sets together.
+- `jdbc-common`: H2, MySQL, MariaDB and PostgreSQL.
+- `jdbc-enterprise`: Oracle, SQL Server, Db2, SAP HANA and Informix, plus H2 for cache support.
+- `jdbc-all`: all common and enterprise drivers.
 
-Native images use the `native` profile. A GraalVM JDK with `native-image`
-support must be on `PATH`.
+### Native build
+
+With a GraalVM JDK and `native-image` available:
 
 ```bash
-mvn -Pnative -DskipTests package
+mvn -Pjdbc-common,native -DskipTests package
 mvn -Pjdbc-enterprise,native -DskipTests package
 mvn -Pjdbc-all,native -DskipTests package
 ```
 
-The native executable name follows the selected JDBC driver profile:
+The resulting executable names are:
 
-- default / `jdbc-common`: `nestql`
-- `jdbc-enterprise`: `nestql-enterprise`
-- `jdbc-all`: `nestql-all`
+- `nestql` for `jdbc-common`
+- `nestql-enterprise` for `jdbc-enterprise`
+- `nestql-all` for `jdbc-all`
 
-Input formats are application features, not JDBC-profile features. XML, JSON,
-YAML, CSV, and Parquet support should be present in every JVM and native build.
-
-The grammar lives in: `src/main/antlr4/blater/nestql/core/parser/NestQL.g4`
-It is processed by ANTLR4 during the Maven build (see `pom.xml`). The generated parser/lexer sources are in `target/generated-sources/antlr4/` and should not be edited directly.
