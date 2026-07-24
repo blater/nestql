@@ -3,14 +3,46 @@ package blater.nestql;
 /** Prints top-level and topic-specific command-line help. */
 public final class Help {
   static final String USAGE = """
-      Usage: nestql <script-file-or-text> [input-file] [name=value ...] [options]
-             nestql catalog [table-pattern] [connection/cache options]
-             nestql --cache <input-file> [--cache-dir path]
-             nestql --use-cache <input-file-or-cache-filename> [--cache-dir path]
-             nestql --list-caches [--cache-dir path]
-             nestql --clear-cache [input-file-or-cache-filename] [--cache-dir path]
-             nestql --clear-cache-older-than age [--cache-dir path]
-             nestql -h | --help | --help <topic>
+      Usage:
+        nestql <script-file-or-text> [input-file] [name=value ...] [options]
+        nestql catalog [table-pattern] [options]
+        nestql <input-file> [cache-options]
+        nestql --cache <input-file> [cache-options]
+        nestql --use-cache <input-file-or-cache-filename> [cache-options]
+        nestql --list-caches [cache-options]
+        nestql --clear-cache [input-file-or-cache-filename] [cache-options]
+        nestql --clear-cache-older-than <age> [cache-options]
+        nestql -h | --help [topic]
+
+      Connection options:
+        -p <properties-file>
+        --db <type> --database <name> [--host <host>] [--port <port>]
+        --user <username> [--password <password>]
+        --jdbc-driver <name>
+        --jdbc-class-name <class>
+        --jdbc-database <url>
+        --jdbc-username <username>
+        --jdbc-password <password>
+
+      Output and query options:
+        -o, --output <xml|json|csv|yaml|markdown>
+        --debug
+        --no-key-inference
+
+      Cache options:
+        --cache
+        --cache-dir <path>
+        --metadata-refresh
+        --metadata-expiry-hours <hours>
+
+      Parquet options:
+        --parquet-root <name>
+        --parquet-record <name>
+
+      Other:
+        name=value
+        -h
+        --help [topic]
       """;
 
   static final String HELP_ON_HELP = """
@@ -109,6 +141,7 @@ public final class Help {
           Query a structured input file through a persistent local H2 cache.
 
       SYNOPSIS
+          nestql <input-file> [--cache-dir path]
           nestql --cache <input-file> [--cache-dir path]
           nestql <script> <input-file> --cache [--cache-dir path] [--output type]
           nestql <script> [--output type]
@@ -116,12 +149,13 @@ public final class Help {
       DESCRIPTION
           Supported input types are XML, JSON, YAML, CSV, and Parquet. Caches are
           stored under ~/.nestql/cache by default and reused until explicitly
-          cleared. Loading or explicitly selecting a cache makes it active. A
-          script with no input or JDBC connection queries the active cache.
-          Explicit --cache takes precedence over supplied JDBC settings.
+          cleared. An input file supplied on its own is loaded and made active,
+          just as if --cache had been used. A script with no input or JDBC
+          connection queries the active cache. Explicit --cache selects an input
+          cache for a script and takes precedence over supplied JDBC settings.
 
       EXAMPLES
-          nestql --cache customers.json
+          nestql customers.json
           nestql totals.nql
           nestql totals.nql customers.json --cache --output json
 
@@ -289,6 +323,7 @@ public final class Help {
       SYNOPSIS
           nestql <script-file-or-text> [input-file] [name=value ...] [options]
           nestql catalog [table-pattern] [connection/cache options]
+          nestql <input-file> [--cache-dir path]
           nestql --cache <input-file> [--cache-dir path]
           nestql --use-cache <input-file-or-cache-filename> [--cache-dir path]
           nestql --list-caches [--cache-dir path]
@@ -303,7 +338,8 @@ public final class Help {
           input document, or query an input file through a persistent H2 cache.
 
           Arguments may appear in any unambiguous order. A script may be a file
-          or inline text. The input file type is selected by its extension.
+          or inline text. The input file type is selected by its extension. An
+          input file on its own is loaded into the cache and made active.
 
       HELP
           -h
@@ -392,7 +428,7 @@ public final class Help {
       EXAMPLES
           nestql report.nql -p database.properties
           nestql update.nql customers.json -p database.properties region=EMEA
-          nestql --cache customers.json
+          nestql customers.json
           nestql --use-cache customers.json
           nestql catalog
           nestql catalog 'customer*' --output json
