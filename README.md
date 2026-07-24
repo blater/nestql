@@ -2,9 +2,11 @@
 
 nestQL is a command-line SQL tool for querying JSON, YAML, XML, CSV and Parquet files alongside relational databases reached through JDBC. It can return tabular results, assemble query results into nested documents, and apply database changes using values read from structured files.
 
-## From files and databases to useful output
+NestQL
 
-### Find records in a JSON file
+## Getting Started
+
+### Querying and Filtering a JSON file
 
 This example finds every record containing the highest value, using SQL instead of a format-specific query language.
 
@@ -22,11 +24,7 @@ Given [`elements.json`](docs/examples/jq/elements.json):
 Run an inline query against the file's local cache:
 
 ```bash
-nestql \
-  'select id
-     from item
-    where a in (select max(a) from item);' \
-  docs/examples/jq/elements.json --cache
+nestql 'select id from item where a in (select max(a) from item);' docs/examples/jq/elements.json --cache
 ```
 
 The result contains both records tied for the maximum:
